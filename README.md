@@ -17,6 +17,27 @@ Built on **Debian 13 (trixie)** with the **XFCE** desktop and the
 - A point-and-click installer — no terminal needed to install
 - Optional local AI assistant (`tools/setup-ai.sh`, sized for this hardware)
 
+## The easiest way: one file, no pip
+
+If `pip` isn't working on your machine, you only need Python itself
+(Windows: type `python` in Command Prompt and install it from the Microsoft
+Store that opens; then open a NEW Command Prompt **as Administrator**).
+Then paste these two lines:
+
+```
+curl -L -o get-ace-os.py https://raw.githubusercontent.com/gavincason1234-create/ace-os/main/get-ace-os.py
+py get-ace-os.py
+```
+
+(Linux/macOS: `sudo python3 get-ace-os.py`.) The script downloads the latest
+ACE OS ISO, verifies it, and writes it to a USB drive you pick — same safety
+rules as the pip tool: USB drives only, and you must type `ERASE`.
+
+No Python at all? Plan B needs only a browser: download
+[the ISO directly](https://github.com/gavincason1234-create/ace-os/releases/latest/download/ace-os-amd64.iso)
+and flash it with [Rufus](https://rufus.ie) (portable version, run as
+administrator, pick the ISO, START).
+
 ## The easy way: pip
 
 One command downloads the ISO and makes the bootable USB stick for you.

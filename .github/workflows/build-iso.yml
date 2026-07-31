@@ -49,6 +49,7 @@ jobs:
             mv ace-os-amd64.iso release/
           fi
           mv dist/*.whl release/
+          cp get-ace-os.py release/
           ls -lh release/
 
       - name: Publish "latest" release
