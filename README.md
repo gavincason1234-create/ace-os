@@ -70,8 +70,8 @@ Hardware details and tuning rationale: [docs/hardware-l510m.md](docs/hardware-l5
 
 ```
 build.sh                 One-command ISO build (Docker or native Debian)
+auto/                    live-build entry points (config: distribution, arch, ISO metadata)
 config/                  Debian live-build configuration
-  auto/config            Distribution, architecture, ISO metadata
   package-lists/         What gets installed on the ISO
   includes.chroot/       Files shipped into the OS (zram config, sysctl, wallpaper)
   hooks/normal/          Build-time customization (branding)
