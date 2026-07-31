@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+# Identify the system as ACE OS while keeping Debian compatibility fields
+# (ID/VERSION stay Debian so package tooling keeps working).
+if [ -e /etc/os-release ]; then
+    . /etc/os-release
+    sed -i "s|^PRETTY_NAME=.*|PRETTY_NAME=\"ACE OS 1.0 (based on Debian ${VERSION_ID:-13})\"|" /etc/os-release
+fi
+echo "ACE OS 1.0" > /etc/aceos-release
+
+# Make the ACE OS wallpaper the default desktop background via the
+# desktop-base alternatives system used by Debian's XFCE config.
+if command -v update-alternatives >/dev/null 2>&1; then
+    update-alternatives --install /usr/share/images/desktop-base/default \
+        desktop-background /usr/share/backgrounds/aceos/ace-wallpaper.svg 100 || true
+fi

@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+# ACE OS live-build configuration.
+# Target hardware: ASUS VivoBook L510M (L510MA-WSQ5)
+#   - Intel Celeron N4020 (Gemini Lake Refresh, x86_64)
+#   - 4 GB RAM, 128 GB eMMC storage
+#   - Intel UHD 600 graphics, Intel wireless
+#
+# Base: Debian 13 "trixie" (stable), XFCE desktop, Calamares installer.
+
+lb config noauto \
+    --distribution trixie \
+    --architectures amd64 \
+    --archive-areas "main contrib non-free non-free-firmware" \
+    --firmware-chroot true \
+    --firmware-binary true \
+    --bootappend-live "boot=live components hostname=aceos username=ace quiet" \
+    --iso-application "ACE OS" \
+    --iso-volume "ACEOS" \
+    --iso-publisher "ACE OS Project" \
+    --iso-preparer "ACE OS live-build" \
+    --memtest none \
+    "${@}"

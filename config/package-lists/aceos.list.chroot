@@ -1,0 +1,35 @@
+# ACE OS package selection.
+# Kept lean on purpose: the target machine has 4 GB RAM and 128 GB eMMC.
+
+## Desktop (XFCE — light enough for 4 GB RAM)
+task-xfce-desktop
+task-laptop
+lightdm
+xfce4-power-manager
+xfce4-screenshooter
+mousepad
+ristretto
+xarchiver
+thunar-archive-plugin
+
+## Installer (graphical, beginner-friendly)
+calamares
+calamares-settings-debian
+
+## Everyday apps
+firefox-esr
+vlc
+gnome-disk-utility
+gparted
+
+## Hardware support for the ASUS L510M (Gemini Lake platform)
+firmware-linux
+firmware-iwlwifi
+firmware-realtek
+firmware-atheros
+firmware-sof-signed
+intel-microcode
+intel-media-va-driver
+
+## Performance on low RAM / eMMC
+zram-tools
