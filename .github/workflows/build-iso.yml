@@ -33,8 +33,10 @@ jobs:
           iso=$(ls ace-os-*.iso)
           # Stable asset names so the ace-os downloader and pip URL never change.
           mv "$iso" ace-os-amd64.iso
-          sha256sum ace-os-amd64.iso > SHA256SUMS
           mkdir -p release
+          # SHA256SUMS doubles as the downloader's manifest: it lists the full
+          # ISO and, when split, every part.
+          sha256sum ace-os-amd64.iso > release/SHA256SUMS
           # GitHub release assets max out at 2 GiB — split larger ISOs.
           if [ "$(stat -c%s ace-os-amd64.iso)" -gt 2000000000 ]; then
             split -b 1900M -d ace-os-amd64.iso ace-os-amd64.iso.
@@ -42,10 +44,11 @@ jobs:
               mv "$part" "release/$part.part"
             done
             rm ace-os-amd64.iso
+            (cd release && sha256sum *.part >> SHA256SUMS)
           else
             mv ace-os-amd64.iso release/
           fi
-          mv SHA256SUMS dist/*.whl release/
+          mv dist/*.whl release/
           ls -lh release/
 
       - name: Publish "latest" release
