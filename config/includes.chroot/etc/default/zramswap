@@ -1,0 +1,5 @@
+# ACE OS: compressed swap in RAM.
+# The L510M has only 4 GB of RAM, so zram makes a real difference here.
+ALGO=zstd
+PERCENT=60
+PRIORITY=100
