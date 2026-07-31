@@ -16,7 +16,12 @@ This guide takes you from a working Windows laptop to a laptop running ACE OS.
 
 ## Step 1 — Flash the ISO to the USB drive
 
-On Windows, use [Rufus](https://rufus.ie) (or [balenaEtcher](https://etcher.balena.io)):
+**Automatic (recommended):** if you installed the `ace-os` pip tool (see the
+main README), plug in the USB drive and run `ace-os` — as Administrator on
+Windows, or with `sudo` on Linux/macOS. It downloads the ISO and writes the
+USB drive for you; then skip straight to Step 2.
+
+**Manual:** on Windows, use [Rufus](https://rufus.ie) (or [balenaEtcher](https://etcher.balena.io)):
 
 1. Open Rufus and plug in the USB drive.
 2. **Device:** your USB drive. **Boot selection:** the `ace-os-....iso` file.

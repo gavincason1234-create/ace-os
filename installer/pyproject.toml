@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aceos-installer"
+version = "1.0.0"
+description = "Download ACE OS and create a bootable USB installer automatically"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Unlicense" }
+authors = [{ name = "ACE OS Project" }]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Installation/Setup",
+]
+
+[project.urls]
+Homepage = "https://github.com/gavincason1234-create/ace-os"
+
+[project.scripts]
+ace-os = "aceos_installer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

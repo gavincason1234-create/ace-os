@@ -17,14 +17,35 @@ Built on **Debian 13 (trixie)** with the **XFCE** desktop and the
 - A point-and-click installer — no terminal needed to install
 - Optional local AI assistant (`tools/setup-ai.sh`, sized for this hardware)
 
-## Getting the ISO
+## The easy way: pip
 
-**Option A — GitHub Actions (no Linux machine needed):**
-go to the repo's **Actions** tab → **Build ACE OS ISO** → **Run workflow**.
-When it finishes (~30–60 min), download the `ace-os-iso` artifact and unzip
-it to get the `.iso` file.
+One command downloads the ISO and makes the bootable USB stick for you.
+On any computer with Python installed (on Windows, get it from
+[python.org](https://python.org) and tick "Add python.exe to PATH"):
 
-**Option B — build locally** (any machine with Docker):
+```sh
+pip install https://github.com/gavincason1234-create/ace-os/releases/latest/download/aceos_installer-1.0.0-py3-none-any.whl
+ace-os
+```
+
+Plug in a USB stick (8 GB+, it will be erased), and `ace-os` does the rest:
+downloads the latest ACE OS ISO, verifies it, asks which USB drive to use,
+and writes it. On Windows run the terminal **as Administrator**; on
+Linux/macOS run `ace-os` with `sudo`.
+
+> One-time setup first: the ISO has to exist before it can be downloaded —
+> go to the repo's **Actions** tab → **Build ACE OS ISO** → **Run workflow**
+> once (~30–60 min). The workflow publishes the ISO and the pip package to
+> the repo's **Releases** page automatically. For the pip/download links to
+> work without a login, the repo must be **public** (or set an
+> `ACEOS_GITHUB_TOKEN` environment variable with repo read access).
+
+## Other ways to get the ISO
+
+**GitHub Actions artifact:** every workflow run also attaches the ISO as a
+downloadable artifact (Actions tab → the run → `ace-os-iso`).
+
+**Build locally** (any machine with Docker):
 
 ```sh
 ./build.sh
@@ -33,7 +54,8 @@ it to get the `.iso` file.
 Or on a Debian system without Docker: `sudo ./build.sh --native`
 (requires `apt install live-build`).
 
-Either way you end up with `ace-os-<date>-amd64.iso` (~2 GB).
+Either way you end up with an `.iso` (~2 GB) to flash with Rufus/Etcher —
+or with `ace-os flash --iso path/to/file.iso`.
 
 ## Installing on the laptop
 
@@ -53,9 +75,11 @@ config/                  Debian live-build configuration
   package-lists/         What gets installed on the ISO
   includes.chroot/       Files shipped into the OS (zram config, sysctl, wallpaper)
   hooks/normal/          Build-time customization (branding)
+installer/               pip package (aceos-installer): the `ace-os` command that
+                         downloads the ISO and writes the bootable USB
 tools/setup-ai.sh        Optional post-install local AI (Ollama + small model)
 docs/                    Install guide + hardware notes for the L510M
-.github/workflows/       CI build of the ISO
+.github/workflows/       CI: builds the ISO + pip wheel, publishes them as a release
 ```
 
 ## License

@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+src/aceos_installer/__init__.py
+src/aceos_installer/cli.py
+src/aceos_installer/download.py
+src/aceos_installer/flash.py
+src/aceos_installer.egg-info/PKG-INFO
+src/aceos_installer.egg-info/SOURCES.txt
+src/aceos_installer.egg-info/dependency_links.txt
+src/aceos_installer.egg-info/entry_points.txt
+src/aceos_installer.egg-info/top_level.txt
