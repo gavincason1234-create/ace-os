@@ -1,5 +1,9 @@
 # ACE OS
 
+## 🟦 [👉 CLICK HERE TO START — simple step-by-step instructions](START-HERE.md)
+
+*(Everything below is extra detail — the link above is all you need.)*
+
 A lightweight, ready-to-use Linux operating system built for the
 **ASUS VivoBook L510M (L510MA-WSQ5)** — a laptop with a 2-core Celeron CPU,
 4 GB of RAM, and 128 GB of eMMC storage. ACE OS is tuned so that exact
