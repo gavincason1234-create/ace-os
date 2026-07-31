@@ -1,2 +1,0 @@
-[console_scripts]
-ace-os = aceos_installer.cli:main
