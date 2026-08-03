@@ -158,10 +158,12 @@ jobs:
           mkdir -p /tmp/aitest
           curl -fL --retry 3 -o /tmp/aitest/model.gguf \
             https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
-          sudo mkdir -p /opt/ace-ai/bin "$HOME/.local/share/ace/models"
+          # Only /opt needs root — creating $HOME paths with sudo would leave
+          # them root-owned and the copy below would be denied.
+          sudo mkdir -p /opt/ace-ai/bin
           sudo cp config/includes.chroot/opt/ace-ai/bin/llama-cli /opt/ace-ai/bin/
+          mkdir -p "$HOME/.local/share/ace/models" "$HOME/.config/ace"
           cp /tmp/aitest/model.gguf "$HOME/.local/share/ace/models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
-          mkdir -p "$HOME/.config/ace"
           echo '{"model":"0.5b"}' > "$HOME/.config/ace/config.json"
           python3 config/includes.chroot/usr/local/bin/ace --selftest
 
