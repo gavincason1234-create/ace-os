@@ -53,6 +53,13 @@ if [ -z "$ACE_FETCH_SHOWN" ] && [ -t 1 ]; then
 fi
 EOF
 
+# --- boot splash ----------------------------------------------------------
+if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+    plymouth-set-default-theme ace || true
+    # rebuild the initramfs so the theme is present before the disk mounts
+    update-initramfs -u || true
+fi
+
 # --- system-wide dark default (for apps started outside the user session) --
 mkdir -p /etc/gtk-3.0
 cat > /etc/gtk-3.0/settings.ini <<'EOF'

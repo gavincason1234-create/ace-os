@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=ACE
+Description=ACE OS boot splash — digit rain and sigil
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/ace
+ScriptFile=/usr/share/plymouth/themes/ace/ace.script

@@ -1,0 +1,11 @@
+# ACE OS boot loader defaults.
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=3
+GRUB_DISTRIBUTOR="ACE OS"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
+GRUB_CMDLINE_LINUX=""
+GRUB_BACKGROUND="/usr/share/backgrounds/aceos/grub.png"
+GRUB_COLOR_NORMAL="light-gray/black"
+GRUB_COLOR_HIGHLIGHT="light-red/black"
+GRUB_GFXMODE=auto
+GRUB_DISABLE_OS_PROBER=false

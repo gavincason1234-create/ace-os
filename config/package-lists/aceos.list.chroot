@@ -26,6 +26,11 @@ fonts-inter
 fonts-firacode
 fonts-noto-color-emoji
 
+## Boot splash and login screen
+plymouth
+plymouth-themes
+lightdm-gtk-greeter
+
 ## Live wallpaper, RGB ring, screensavers
 python3-gi
 python3-gi-cairo

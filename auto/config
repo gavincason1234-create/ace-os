@@ -15,7 +15,7 @@ lb config noauto \
     --archive-areas "main contrib non-free non-free-firmware" \
     --firmware-chroot true \
     --firmware-binary true \
-    --bootappend-live "boot=live components hostname=aceos username=ace quiet" \
+    --bootappend-live "boot=live components hostname=aceos username=ace quiet splash" \
     --iso-application "ACE OS" \
     --iso-volume "ACEOS" \
     --iso-publisher "ACE OS Project" \
