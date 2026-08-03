@@ -165,6 +165,18 @@ jobs:
           mkdir -p "$HOME/.local/share/ace/models" "$HOME/.config/ace"
           cp /tmp/aitest/model.gguf "$HOME/.local/share/ace/models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
           echo '{"model":"0.5b"}' > "$HOME/.config/ace/config.json"
+
+          echo "--- engine interface ---"
+          /opt/ace-ai/bin/llama-cli --help 2>&1 | head -70 || true
+
+          echo "--- direct minimal generation, stderr shown ---"
+          printf 'Say hello in three words.' > /tmp/probe.txt
+          /opt/ace-ai/bin/llama-cli \
+            -m "$HOME/.local/share/ace/models/qwen2.5-0.5b-instruct-q4_k_m.gguf" \
+            -f /tmp/probe.txt -n 16 -c 512 -t 2 --no-display-prompt 2>&1 \
+            | tail -25 || true
+
+          echo "--- ace selftest ---"
           python3 config/includes.chroot/usr/local/bin/ace --selftest
 
       - name: Build ISO

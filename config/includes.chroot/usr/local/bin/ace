@@ -183,16 +183,16 @@ def build_prompt(history):
     return "".join(parts)
 
 
-def generate(engine, model, history, on_token, n_predict=1024, ctx=4096):
-    """Run one turn. Streams text to on_token(str). Returns the full reply."""
-    help_text = engine_flags(engine)
-    threads = max(1, min(os.cpu_count() or 2, 4))
+# Optional speed flags, richest first. llama.cpp renames and re-types these
+# between releases (--flash-attn grew a required value, for one), and a
+# rejected flag makes the engine exit instantly with an empty reply. So the
+# tiers are tried in order and the first one that actually speaks is
+# remembered, which keeps ACE working across engine upgrades.
+FLAG_TIERS = ("full", "kv", "plain")
 
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
-                                     encoding="utf-8") as pf:
-        pf.write(build_prompt(history))
-        prompt_path = pf.name
 
+def build_command(engine, model, prompt_path, help_text, tier,
+                  n_predict, ctx, threads):
     cmd = [str(engine), "-m", str(model), "-f", prompt_path,
            "-n", str(n_predict), "-c", str(ctx), "-t", str(threads),
            "--temp", "0.7"]
@@ -202,25 +202,25 @@ def generate(engine, model, history, on_token, n_predict=1024, ctx=4096):
     if "-ngl" in help_text or "--n-gpu-layers" in help_text:
         cmd += ["-ngl", "0"]
 
-    # --- speed and memory on a 4 GB, 2-core machine ------------------------
-    # Flash attention: less memory per token and a faster attention pass.
-    if "--flash-attn" in help_text or "-fa" in help_text:
-        cmd.append("--flash-attn" if "--flash-attn" in help_text else "-fa")
-    # An 8-bit KV cache roughly halves what the context costs in RAM, which
-    # is what lets a 4096-token window fit here at all.
-    if "--cache-type-k" in help_text:
+    if tier in ("full", "kv") and "--cache-type-k" in help_text:
+        # An 8-bit KV cache roughly halves what the context costs in RAM,
+        # which is what makes a 4096-token window realistic on 4 GB.
         cmd += ["--cache-type-k", "q8_0", "--cache-type-v", "q8_0"]
-    # Reuse the processed prefix between turns: without this the CPU
-    # re-reads the whole conversation on every single reply.
-    if "--prompt-cache" in help_text and os.environ.get("ACE_NO_CACHE") != "1":
+
+    if tier == "full" and "--prompt-cache" in help_text \
+            and os.environ.get("ACE_NO_CACHE") != "1":
+        # Reuse the processed prefix between turns, so the CPU stops
+        # re-reading the whole conversation for every reply.
         cache = Path(tempfile.gettempdir()) / f"ace-prompt-{os.getuid()}.bin"
         cmd += ["--prompt-cache", str(cache)]
-        if "--prompt-cache-all" in help_text:
-            cmd.append("--prompt-cache-all")
+    return cmd
 
+
+def run_engine(cmd, on_token):
+    """Stream one generation. Returns (text, returncode, stderr_tail)."""
     reply = []
     decoder = codecs.getincrementaldecoder("utf-8")("replace")
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         while True:
             raw = proc.stdout.read(64)
@@ -239,21 +239,59 @@ def generate(engine, model, history, on_token, n_predict=1024, ctx=4096):
                 break
             reply.append(text)
             on_token(text)
-        proc.wait(timeout=10)
+        proc.wait(timeout=15)
     except KeyboardInterrupt:
         proc.terminate()
         raise
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    try:
+        errors = (proc.stderr.read() or b"").decode("utf-8", "replace")
+    except Exception:
+        errors = ""
+    out = re.sub(r"\[end of text\]\s*$", "", "".join(reply)).strip()
+    return out, proc.returncode, errors.strip()[-1200:]
+
+
+def generate(engine, model, history, on_token, n_predict=1024, ctx=4096):
+    """Run one turn. Streams text to on_token(str). Returns the full reply."""
+    help_text = engine_flags(engine)
+    threads = max(1, min(os.cpu_count() or 2, 4))
+
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
+                                     encoding="utf-8") as pf:
+        pf.write(build_prompt(history))
+        prompt_path = pf.name
+
+    cfg = load_config()
+    known = cfg.get("engine_tier")
+    order = ([known] + [t for t in FLAG_TIERS if t != known]) if known else list(FLAG_TIERS)
+
+    last_error = ""
+    try:
+        for tier in order:
+            cmd = build_command(engine, model, prompt_path, help_text, tier,
+                                n_predict, ctx, threads)
+            out, code, errors = run_engine(cmd, on_token)
+            if out:
+                if cfg.get("engine_tier") != tier:
+                    cfg["engine_tier"] = tier
+                    save_config(cfg)
+                return out
+            last_error = errors or f"engine exited with code {code}"
+            if tier != order[-1]:
+                print(f"\n{GREY}(engine rejected the '{tier}' options, "
+                      f"retrying simpler){R}", file=sys.stderr)
     finally:
         try:
             os.unlink(prompt_path)
         except OSError:
             pass
-        if proc.poll() is None:
-            proc.kill()
 
-    out = "".join(reply)
-    out = re.sub(r"\[end of text\]\s*$", "", out).strip()
-    return out
+    print(f"\n{RED}!{R} the engine produced nothing. It reported:\n"
+          f"{GREY}{last_error}{R}", file=sys.stderr)
+    return ""
 
 
 # --------------------------------------------------------------- built-ins
