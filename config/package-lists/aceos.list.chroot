@@ -23,12 +23,10 @@ greybird-gtk-theme
 papirus-icon-theme
 fonts-jetbrains-mono
 fonts-inter
-fonts-firacode
 fonts-noto-color-emoji
 
 ## Boot splash and login screen
 plymouth
-plymouth-themes
 lightdm-gtk-greeter
 
 ## Live wallpaper, RGB ring, screensavers
@@ -40,9 +38,7 @@ xscreensaver-data
 
 ## Everyday apps
 firefox-esr
-vlc
 gnome-disk-utility
-gparted
 
 ## Terminal stack — modern tools worth having
 htop

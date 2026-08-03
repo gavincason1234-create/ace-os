@@ -199,6 +199,7 @@ jobs:
           sha256sum ace-os-amd64.iso > release/SHA256SUMS
           # GitHub release assets max out at 2 GiB — split larger ISOs.
           if [ "$(stat -c%s ace-os-amd64.iso)" -gt 2000000000 ]; then
+            echo "::warning::ISO exceeds the 2 GB release-asset limit; the plain browser download link will not resolve until packages are trimmed"
             split -b 1900M -d ace-os-amd64.iso ace-os-amd64.iso.
             for part in ace-os-amd64.iso.[0-9]*; do
               mv "$part" "release/$part.part"
@@ -220,6 +221,19 @@ jobs:
             --title "ACE OS (latest build)" \
             --notes "Automated build. See START-HERE.md for install steps." \
             || true
+
+          # Remove assets from previous builds that this one does not replace.
+          # Without this a stale ace-os-amd64.iso keeps being served from the
+          # download link even when the current build was split into parts —
+          # so the browser button would quietly hand out an old image.
+          for stale in ace-os-amd64.iso ace-os-amd64.iso.00.part \
+                       ace-os-amd64.iso.01.part ace-os-amd64.iso.02.part; do
+            if [ ! -f "release/$stale" ]; then
+              gh release delete-asset latest "$stale" --yes 2>/dev/null \
+                && echo "removed stale asset: $stale" || true
+            fi
+          done
+
           gh release upload latest release/* --clobber
 
       - name: Upload ISO as workflow artifact (backup)

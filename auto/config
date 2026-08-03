@@ -21,4 +21,5 @@ lb config noauto \
     --iso-publisher "ACE OS Project" \
     --iso-preparer "ACE OS live-build" \
     --memtest none \
+    --compression xz \
     "${@}"
