@@ -1,5 +1,6 @@
 # ACE OS package selection.
 # Kept deliberately lean: the target machine has 4 GB RAM and 128 GB eMMC.
+# Every name here is verified against the archive before the ISO is built.
 
 ## Desktop (XFCE — light enough for 4 GB RAM)
 task-xfce-desktop
@@ -17,10 +18,20 @@ thunar-archive-plugin
 calamares
 calamares-settings-debian
 
-## Dark "BlackArch" look
+## Dark look + modern type
 greybird-gtk-theme
 papirus-icon-theme
+fonts-jetbrains-mono
+fonts-inter
 fonts-firacode
+fonts-noto-color-emoji
+
+## Live wallpaper, RGB ring, screensavers
+python3-gi
+python3-gi-cairo
+gir1.2-gtk-3.0
+xscreensaver
+xscreensaver-data
 
 ## Everyday apps
 firefox-esr
@@ -28,19 +39,32 @@ vlc
 gnome-disk-utility
 gparted
 
-## Terminal stack
+## Terminal stack — modern tools worth having
 htop
+btop
 tmux
 ncdu
+duf
 tree
 neovim
 git
 curl
 wget
+jq
+ripgrep
+fd-find
+bat
+fzf
 unzip
 ca-certificates
 
-## Local AI runtime (the llama.cpp engine is added by the build workflow)
+## Voice: speech out, recording, mixer control
+espeak-ng
+sox
+alsa-utils
+libsox-fmt-all
+
+## Local AI runtime (llama.cpp + whisper.cpp are added by the build workflow)
 libgomp1
 python3
 python3-pip

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ACE Rain
+GenericName=Digit rain
+Comment=Fullscreen digit rain — any key exits
+Exec=/usr/local/bin/ace-rain --screensaver
+Icon=preferences-desktop-screensaver
+Terminal=false
+Categories=Utility;

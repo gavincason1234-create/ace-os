@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ACE look
+Comment=Live digit-rain wallpaper and the RGB edge ring
+Exec=/usr/local/bin/ace-look start
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

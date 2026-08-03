@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ACE Doctor
+GenericName=System health
+Comment=Memory, disk, temperature, battery and service check
+Exec=xfce4-terminal --title="ACE Doctor" --hold --command="/usr/local/bin/ace-sys doctor"
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Settings;

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ACE Voice
+GenericName=Talk to your laptop
+Comment=Speak to ACE and hear it answer — entirely offline
+Exec=xfce4-terminal --title="ACE Voice" --command="/usr/local/bin/ace-voice"
+Icon=audio-input-microphone
+Terminal=false
+Categories=Utility;AudioVideo;
+Keywords=voice;speech;assistant;offline;

@@ -1,0 +1,16 @@
+timeout:	0:08:00
+cycle:		0:06:00
+lock:		False
+fadeTicks:	20
+splash:		False
+mode:		random
+selected:	0
+
+programs:								      \
+  "ACE digit rain"  ace-rain --screensaver --ring 4			    \n\
+  "ACE rain (fast)" ace-rain --screensaver --fps 20 --cell 12		    \n\
+			      xmatrix -root				    \n\
+			      phosphor -root				    \n\
+			      hypnowheel -root				    \n\
+			      penrose -root				    \n\
+			      coral -root				    \n\

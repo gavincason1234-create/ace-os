@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACE OS — a laptop that thinks for itself</title>
+<meta name="description" content="A lightweight Linux system with an offline AI built in, made for the ASUS VivoBook L510M.">
+<style>
+  :root {
+    --void:#080607; --ground:#0a0a0a;
+    --blood:#e10f28; --rust:#7a0d18; --bone:#d6d6d6;
+    --ash:#8d8386; --edge:#241a1c; --card:#100c0e;
+    --mono:"JetBrains Mono","DejaVu Sans Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--void);color:#eae5e6;font-family:var(--sans);
+       font-size:clamp(1rem,.95rem+.2vw,1.06rem);line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:var(--blood)}
+  .wrap{max-width:960px;margin:0 auto;padding:0 clamp(1.1rem,4vw,2rem)}
+
+  /* hero */
+  header{position:relative;overflow:hidden;border-bottom:1px solid var(--edge)}
+  #rain{position:absolute;inset:0;width:100%;height:100%;display:block;opacity:.5}
+  .hero{position:relative;padding:clamp(4rem,13vw,8rem) 0 clamp(3rem,8vw,5rem);text-align:center}
+  .mark{font-family:var(--mono);font-weight:700;letter-spacing:.28em;
+        font-size:clamp(3rem,13vw,7rem);margin:0;line-height:1}
+  .tagline{font-family:var(--mono);color:var(--blood);letter-spacing:.34em;
+           text-transform:uppercase;font-size:clamp(.62rem,2.1vw,.8rem);margin:.9rem 0 0}
+  .lede{max-width:56ch;margin:1.8rem auto 0;color:#cfc8ca}
+  .cta{display:flex;gap:.7rem;justify-content:center;flex-wrap:wrap;margin-top:2.2rem}
+  .btn{display:inline-block;font-family:var(--mono);font-size:.82rem;letter-spacing:.1em;
+       text-transform:uppercase;text-decoration:none;padding:.85rem 1.5rem;border-radius:2px;
+       border:1px solid var(--blood);color:var(--blood);transition:background .15s,color .15s}
+  .btn:hover{background:var(--blood);color:#0a0a0a}
+  .btn.solid{background:var(--blood);color:#0a0a0a}
+  .btn.solid:hover{background:#ff2d45;border-color:#ff2d45}
+  .meta{font-family:var(--mono);font-size:.72rem;color:var(--ash);margin-top:1.6rem;letter-spacing:.06em}
+
+  section{padding:clamp(3rem,8vw,5rem) 0;border-bottom:1px solid var(--edge)}
+  h2{font-family:var(--mono);font-size:.95rem;letter-spacing:.2em;text-transform:uppercase;
+     margin:0 0 1.6rem;font-weight:700}
+  h2::before{content:"// ";color:var(--blood)}
+  h3{font-family:var(--mono);font-size:.95rem;margin:0 0 .35rem;letter-spacing:.04em}
+  p{margin:0 0 1rem}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.8rem}
+  .card{background:var(--card);border:1px solid var(--edge);border-left:2px solid var(--rust);
+        border-radius:3px;padding:1.1rem 1.2rem;transition:border-left-color .15s,transform .15s}
+  .card:hover{border-left-color:var(--blood);transform:translateY(-2px)}
+  .card p{color:var(--ash);font-size:.94rem;margin:0}
+
+  pre{background:var(--ground);border:1px solid var(--edge);border-radius:3px;
+      padding:1rem 1.1rem;overflow-x:auto;font-family:var(--mono);
+      font-size:clamp(.7rem,2vw,.82rem);line-height:1.55;color:var(--bone);margin:0}
+  .r{color:var(--blood)} .w{color:#fff} .g{color:var(--ash)} .dr{color:var(--rust)}
+
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:0;
+           display:flex;flex-direction:column;gap:.75rem}
+  ol.steps li{counter-increment:s;display:grid;grid-template-columns:auto 1fr;gap:1rem;
+              background:var(--card);border:1px solid var(--edge);border-radius:3px;padding:1rem 1.2rem}
+  ol.steps li::before{content:counter(s,decimal-leading-zero);font-family:var(--mono);
+                      color:var(--blood);font-size:.8rem;padding-top:.2rem}
+  ol.steps strong{display:block;margin-bottom:.15rem}
+  ol.steps span{color:var(--ash);font-size:.94rem}
+
+  .warn{border-left:2px solid var(--blood);background:rgba(225,15,40,.06);
+        padding:1rem 1.2rem;border-radius:3px;font-size:.95rem}
+  .warn b{color:var(--blood)}
+
+  footer{padding:2.5rem 0 4rem;font-family:var(--mono);font-size:.72rem;color:var(--ash);
+         display:flex;gap:1.4rem;flex-wrap:wrap;justify-content:space-between}
+  footer a{color:var(--ash);text-decoration:none;border-bottom:1px solid var(--edge)}
+  footer a:hover{color:var(--blood)}
+  @media (prefers-reduced-motion:reduce){#rain{display:none}*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <canvas id="rain" aria-hidden="true"></canvas>
+  <div class="wrap hero">
+    <h1 class="mark">ACE</h1>
+    <p class="tagline">Local intelligence</p>
+    <p class="lede">
+      A lightweight Linux system with its own AI built in — no account, no
+      subscription, no data leaving the machine. Built for one modest laptop
+      and tuned until it felt fast on it.
+    </p>
+    <div class="cta">
+      <a class="btn solid" href="https://github.com/gavincason1234-create/ace-os/releases/latest/download/ace-os-amd64.iso">Download ISO</a>
+      <a class="btn" href="https://github.com/gavincason1234-create/ace-os/blob/main/START-HERE.md">Install guide</a>
+      <a class="btn" href="https://github.com/gavincason1234-create/ace-os">Source</a>
+    </div>
+    <p class="meta">Debian 13 · XFCE · amd64 · ~1.9 GB · free and open</p>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>What it is</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>AI that lives here</h3>
+        <p>Qwen2.5 runs on your own CPU through llama.cpp. Download the model once, then unplug the internet — it keeps working.</p>
+      </div>
+      <div class="card">
+        <h3>It listens and answers</h3>
+        <p>Speak instead of typing. Whisper transcribes on-device, espeak or piper answers out loud, and spoken commands open apps and read out battery, memory and time.</p>
+      </div>
+      <div class="card">
+        <h3>Built for weak hardware</h3>
+        <p>Compiled without AVX for the Celeron N4020, compressed zram swap for 4 GB of RAM, and a desktop that idles in about 600 MB.</p>
+      </div>
+      <div class="card">
+        <h3>Looks the part</h3>
+        <p>Black ground, blood-red accents, a live digit-rain wallpaper and an animated RGB edge ring you can switch off when you want the cycles back.</p>
+      </div>
+      <div class="card">
+        <h3>Real tools</h3>
+        <p>ripgrep, fd, bat, fzf, btop, duf, neovim and tmux — plus <code>ace-sys</code> for health checks, cleanup and network diagnosis.</p>
+      </div>
+      <div class="card">
+        <h3>Nothing phones home</h3>
+        <p>No telemetry, no account, no cloud dependency. The only network traffic is what you start yourself.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>The terminal</h2>
+<pre><span class="dr">┌─[</span><span class="r">ace</span><span class="dr">@</span><span class="r">aceos</span><span class="dr">]─[</span><span class="g">~</span><span class="dr">]</span>
+<span class="dr">└─</span><span class="r">▶</span> <span class="w">ace</span>
+
+<span class="r">      ▄▄▄       ▄████▄  ▓█████
+     ▒████▄    ▒██▀ ▀█  ▓█   ▀
+     ▒██  ▀█▄  ▒▓█    ▄ ▒███
+     ░██▄▄▄▄██ ▒▓▓▄ ▄██▒▒▓█  ▄</span>
+<span class="dr">    ──────────────────────────────────</span>
+<span class="g">     local ai · runs on this machine · v1.0</span>
+
+<span class="g">brain</span> <span class="w">1.5b</span> <span class="g">· offline · type</span> <span class="r">/help</span> <span class="g">for commands</span>
+
+<span class="dr">┌─[</span><span class="r">ace</span><span class="dr">@</span><span class="r">1.5b</span><span class="dr">]</span>
+<span class="dr">└─</span><span class="r">▶</span> how do I free up disk space?
+
+You can clear the caches safely with <span class="w">ace-sys clean</span> — it shows
+what it will delete and how much you get back before touching
+anything. The apt package cache is usually the biggest win.</pre>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Install it</h2>
+    <ol class="steps">
+      <li><strong>Download the ISO</strong><span>The button at the top. About 1.9 GB.</span></li>
+      <li><strong>Write it to a USB stick</strong><span>8 GB or larger, with Rufus or balenaEtcher. The stick gets erased.</span></li>
+      <li><strong>Boot from the stick</strong><span>Tap F2 at power-on, turn Secure Boot off, save with F10, then tap Esc and pick the USB drive.</span></li>
+      <li><strong>Run the installer</strong><span>Double-click Install on the desktop and follow it through. Around 20 minutes.</span></li>
+      <li><strong>Wake the AI</strong><span>Open a terminal, type <code>ace</code>, then <code>/setup</code> to fetch the brain. Add voice with <code>ace-voice --setup</code>.</span></li>
+    </ol>
+    <p style="margin-top:1.4rem"></p>
+    <div class="warn">
+      <b>Rufus showing no drives?</b> It hides sticks larger than about 64 GB
+      on purpose. Click <em>Show advanced drive properties</em> and tick
+      <em>List USB Hard Drives</em> — yours will appear.
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Honest limits</h2>
+    <p style="max-width:62ch;color:var(--ash)">
+      The AI answers at a few words per second on a 2-core Celeron. It is good
+      for questions, explanations, drafting and system help — it is not a
+      cloud model and will not pretend to be. Installing replaces whatever is
+      on the laptop, so copy anything you want to keep first.
+    </p>
+  </div>
+</section>
+
+<footer class="wrap">
+  <span>ACE OS 1.0 · Debian-based · public domain</span>
+  <span>
+    <a href="https://github.com/gavincason1234-create/ace-os">GitHub</a> ·
+    <a href="https://github.com/gavincason1234-create/ace-os/releases/latest">Releases</a> ·
+    <a href="https://github.com/gavincason1234-create/ace-os/blob/main/START-HERE.md">Guide</a>
+  </span>
+</footer>
+
+<script>
+(function(){
+  var canvas=document.getElementById('rain');
+  if(!canvas||window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  var ctx=canvas.getContext('2d'),digits='090807060504030201',cell=16,cols=0,drops=[];
+  function size(){
+    var box=canvas.parentElement.getBoundingClientRect();
+    canvas.width=box.width;canvas.height=box.height;
+    cols=Math.ceil(canvas.width/cell);
+    drops=[];
+    for(var i=0;i<cols;i++)drops.push(Math.random()*-canvas.height/cell);
+  }
+  function frame(){
+    ctx.fillStyle='rgba(8,6,7,0.16)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.font=(cell-2)+'px "DejaVu Sans Mono", monospace';
+    for(var i=0;i<cols;i++){
+      var y=drops[i],ch=digits[(Math.floor(y)+i)%digits.length];
+      if(y>0){
+        ctx.fillStyle='#fff';ctx.fillText(ch,i*cell,y*cell);
+        ctx.fillStyle='#e10f28';ctx.fillText(digits[(Math.floor(y)+i+1)%digits.length],i*cell,(y-1)*cell);
+        ctx.fillStyle='#7a0d18';ctx.fillText(digits[(Math.floor(y)+i+2)%digits.length],i*cell,(y-2)*cell);
+      }
+      drops[i]=y*cell>canvas.height&&Math.random()>0.975?0:y+0.55;
+    }
+    requestAnimationFrame(frame);
+  }
+  size();window.addEventListener('resize',size);frame();
+})();
+</script>
+</body>
+</html>

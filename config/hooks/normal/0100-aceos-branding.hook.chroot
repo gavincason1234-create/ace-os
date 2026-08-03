@@ -17,7 +17,7 @@ cat > /etc/issue <<'EOF'
 EOF
 
 # --- executables ----------------------------------------------------------
-for tool in /usr/local/bin/ace /usr/local/bin/ace-fetch; do
+for tool in /usr/local/bin/ace*; do
     [ -e "$tool" ] && chmod 755 "$tool"
 done
 mkdir -p /usr/share/ace/models /opt/ace-ai/bin
@@ -40,6 +40,11 @@ alias la='ls -A --color=auto'
 alias ..='cd ..'
 alias sysinfo='ace-fetch'
 alias ai='ace'
+alias doctor='ace-sys doctor'
+alias rain='ace-rain --tty'
+# modern replacements, if the tool is installed under a Debian-specific name
+command -v batcat >/dev/null 2>&1 && alias bat='batcat'
+command -v fdfind >/dev/null 2>&1 && alias fd='fdfind'
 
 # Show the machine summary on the first terminal of a session.
 if [ -z "$ACE_FETCH_SHOWN" ] && [ -t 1 ]; then
