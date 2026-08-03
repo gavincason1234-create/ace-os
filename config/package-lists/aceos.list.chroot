@@ -63,6 +63,15 @@ fzf
 unzip
 ca-certificates
 
+## Camera and radar sources
+ffmpeg
+mpv
+v4l-utils
+bluez
+usbutils
+iw
+network-manager
+
 ## Voice: speech out, recording, mixer control
 espeak-ng
 sox

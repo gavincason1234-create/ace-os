@@ -1,0 +1,14 @@
+[Unit]
+Description=ACE OS shutdown sequence
+DefaultDependencies=no
+Before=shutdown.target reboot.target halt.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ace-sequence down
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+
+[Install]
+WantedBy=shutdown.target

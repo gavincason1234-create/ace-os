@@ -53,12 +53,12 @@ if [ -z "$ACE_FETCH_SHOWN" ] && [ -t 1 ]; then
 fi
 EOF
 
-# --- boot splash ----------------------------------------------------------
-if command -v plymouth-set-default-theme >/dev/null 2>&1; then
-    plymouth-set-default-theme ace || true
-    # rebuild the initramfs so the theme is present before the disk mounts
-    update-initramfs -u || true
-fi
+# --- boot / shutdown sequence ---------------------------------------------
+# Verbose boot on purpose: the scrolling start-up is part of the look. The
+# plymouth theme stays installed for anyone who prefers a silent splash
+# (plymouth-set-default-theme ace && update-initramfs -u).
+systemctl enable ace-boot.service 2>/dev/null || true
+systemctl enable ace-shutdown.service 2>/dev/null || true
 
 # --- system-wide dark default (for apps started outside the user session) --
 mkdir -p /etc/gtk-3.0
