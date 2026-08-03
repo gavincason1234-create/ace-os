@@ -59,32 +59,44 @@ jobs:
             -DGGML_SSE42=ON \
             -DLLAMA_CURL=OFF -DBUILD_SHARED_LIBS=OFF \
             -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_SERVER=OFF
-          # Upstream renames/moves the CLI target between releases, so build
-          # everything and then find the binary rather than guessing a name.
-          echo "--- available targets ---"
-          cmake --build /tmp/llama.cpp/build --target help 2>/dev/null \
-            | sed 's/^\.\.\. //' | grep -i llama || true
-          echo "-------------------------"
-          cmake --build /tmp/llama.cpp/build -j"$(nproc)"
+          targets=$(cmake --build /tmp/llama.cpp/build --target help 2>/dev/null \
+                    | sed 's/^\.\.\. //' | awk '{print $1}' | tr -d ':')
+          echo "--- llama targets in this checkout ---"
+          echo "$targets" | grep -i '^llama' || true
+          echo "--------------------------------------"
 
-          bin=""
-          for name in llama-cli llama-app main llama; do
-            found=$(find /tmp/llama.cpp/build -type f -name "$name" -perm -u+x \
-                    -not -name '*.o' | head -1)
-            if [ -n "$found" ]; then bin="$found"; break; fi
+          # Upstream renamed the old llama-cli (now llama-completion) and added
+          # a unified llama-app that cannot link while the server is disabled,
+          # so build one specific single-shot tool instead of "all".
+          built=""
+          for candidate in llama-completion llama-cli main; do
+            if echo "$targets" | grep -qx "$candidate"; then
+              cmake --build /tmp/llama.cpp/build --target "$candidate" -j"$(nproc)"
+              built="$candidate"
+              break
+            fi
           done
-          if [ -z "$bin" ]; then
-            echo "::error::no llama.cpp CLI binary found after build"
-            find /tmp/llama.cpp/build -type f -perm -u+x -not -name '*.o' \
-              -not -name '*.sh' -not -name '*.cmake' | head -40
+          if [ -z "$built" ]; then
+            echo "::error::no completion/CLI target in this llama.cpp checkout"
+            echo "$targets" | head -60
             exit 1
           fi
-          echo "using engine binary: $bin"
-          "$bin" --version 2>&1 | head -3 || true
+
+          bin=$(find /tmp/llama.cpp/build -type f -name "$built" -perm -u+x \
+                -not -name '*.o' | head -1)
+          if [ -z "$bin" ]; then
+            echo "::error::target $built built but no binary found"
+            find /tmp/llama.cpp/build -type f -perm -u+x -not -name '*.o' | head -40
+            exit 1
+          fi
+          echo "using engine binary: $bin (target $built)"
 
           mkdir -p config/includes.chroot/opt/ace-ai/bin
           cp "$bin" config/includes.chroot/opt/ace-ai/bin/llama-cli
           chmod 755 config/includes.chroot/opt/ace-ai/bin/llama-cli
+          # Record the interface so any future flag rename is visible here.
+          echo "--- engine interface ---"
+          config/includes.chroot/opt/ace-ai/bin/llama-cli --help 2>&1 | head -40 || true
 
       - name: Build speech-recognition engine (no AVX)
         run: |
@@ -96,7 +108,20 @@ jobs:
             -DGGML_FMA=OFF -DGGML_F16C=OFF \
             -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF \
             -DWHISPER_BUILD_SERVER=OFF
-          cmake --build /tmp/whisper.cpp/build -j"$(nproc)"
+          wtargets=$(cmake --build /tmp/whisper.cpp/build --target help 2>/dev/null \
+                     | sed 's/^\.\.\. //' | awk '{print $1}' | tr -d ':')
+          wbuilt=""
+          for candidate in whisper-cli main; do
+            if echo "$wtargets" | grep -qx "$candidate"; then
+              cmake --build /tmp/whisper.cpp/build --target "$candidate" -j"$(nproc)"
+              wbuilt="$candidate"
+              break
+            fi
+          done
+          if [ -z "$wbuilt" ]; then
+            echo "no known whisper target; building everything"
+            cmake --build /tmp/whisper.cpp/build -j"$(nproc)"
+          fi
           bin=""
           for name in whisper-cli main whisper; do
             found=$(find /tmp/whisper.cpp/build -type f -name "$name" -perm -u+x \
