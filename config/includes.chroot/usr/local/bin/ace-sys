@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+"""ace-sys — practical maintenance for a 4 GB laptop.
+
+  ace-sys doctor    health check: memory, disk, temperature, battery, services
+  ace-sys clean     reclaim disk space (shows the plan first, asks before acting)
+  ace-sys net       connection, address, and whether the internet actually works
+  ace-sys top       what is eating memory right now
+"""
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+RED = "\033[38;5;196m"
+YELL = "\033[38;5;220m"
+GREEN = "\033[38;5;46m"
+WHITE = "\033[38;5;255m"
+GREY = "\033[38;5;245m"
+DRED = "\033[38;5;88m"
+R = "\033[0m"
+
+OK, WARN, BAD = f"{GREEN}✓{R}", f"{YELL}!{R}", f"{RED}✗{R}"
+
+
+def run(cmd, **kwargs):
+    """subprocess.run that never explodes when the tool is not installed."""
+    kwargs.setdefault("capture_output", True)
+    kwargs.setdefault("text", True)
+    try:
+        return subprocess.run(cmd, **kwargs)
+    except (FileNotFoundError, OSError):
+        return subprocess.CompletedProcess(cmd, 127, "", "")
+
+
+def read(path):
+    try:
+        return Path(path).read_text()
+    except Exception:
+        return ""
+
+
+def human(size):
+    for unit in ("B", "K", "M", "G", "T"):
+        if abs(size) < 1024 or unit == "T":
+            return f"{size:.0f}{unit}" if unit != "B" else f"{size:.0f}B"
+        size /= 1024
+
+
+def head(title):
+    print(f"\n{DRED}──{R} {WHITE}{title}{R} {DRED}{'─' * max(0, 58 - len(title))}{R}")
+
+
+def meminfo():
+    values = {}
+    for line in read("/proc/meminfo").splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            values[parts[0].rstrip(":")] = int(parts[1]) * 1024
+    return values
+
+
+def doctor():
+    head("memory")
+    mem = meminfo()
+    total, avail = mem.get("MemTotal", 0), mem.get("MemAvailable", 0)
+    if total:
+        used_pct = 100 * (total - avail) // total
+        mark = OK if used_pct < 75 else (WARN if used_pct < 90 else BAD)
+        print(f"  {mark} {used_pct}% used  ({human(total - avail)} of {human(total)}, "
+              f"{human(avail)} free)")
+    swap_total, swap_free = mem.get("SwapTotal", 0), mem.get("SwapFree", 0)
+    if swap_total:
+        print(f"  {OK} zram swap {human(swap_total - swap_free)} of {human(swap_total)} in use")
+    else:
+        print(f"  {WARN} no swap active — heavy tabs may kill apps")
+
+    head("disk")
+    usage = shutil.disk_usage("/")
+    pct = 100 * usage.used // usage.total
+    mark = OK if pct < 80 else (WARN if pct < 92 else BAD)
+    print(f"  {mark} {pct}% full  ({human(usage.used)} of {human(usage.total)}, "
+          f"{human(usage.free)} free)")
+
+    head("temperature")
+    temps = []
+    for zone in sorted(Path("/sys/class/thermal").glob("thermal_zone*")):
+        value = read(zone / "temp").strip()
+        if value.isdigit():
+            temps.append(int(value) / 1000)
+    if temps:
+        peak = max(temps)
+        mark = OK if peak < 70 else (WARN if peak < 85 else BAD)
+        print(f"  {mark} {peak:.0f}°C peak")
+    else:
+        print(f"  {GREY}  no sensors reported{R}")
+
+    head("battery")
+    found = False
+    for entry in sorted(Path("/sys/class/power_supply").glob("BAT*")):
+        capacity = read(entry / "capacity").strip()
+        status = read(entry / "status").strip()
+        full = read(entry / "energy_full").strip() or read(entry / "charge_full").strip()
+        design = (read(entry / "energy_full_design").strip()
+                  or read(entry / "charge_full_design").strip())
+        line = f"  {OK} {capacity}% ({status.lower()})"
+        if full.isdigit() and design.isdigit() and int(design):
+            health = 100 * int(full) // int(design)
+            line += f", health {health}% of original"
+        print(line)
+        found = True
+    if not found:
+        print(f"  {GREY}  no battery reported{R}")
+
+    head("services")
+    result = run(["systemctl", "--failed", "--no-legend", "--plain"],
+                            capture_output=True, text=True)
+    failed = [l for l in (result.stdout or "").splitlines() if l.strip()]
+    if failed:
+        for line in failed[:6]:
+            print(f"  {BAD} {line.split()[0]}")
+    else:
+        print(f"  {OK} nothing failed")
+
+    head("ai")
+    engine = Path("/opt/ace-ai/bin/llama-cli")
+    models = list((Path.home() / ".local/share/ace/models").glob("*.gguf")) + \
+        list(Path("/usr/share/ace/models").glob("*.gguf"))
+    print(f"  {OK if engine.exists() else BAD} engine "
+          f"{'ready' if engine.exists() else 'missing'}")
+    if models:
+        for model in models:
+            print(f"  {OK} brain {model.stem} ({human(model.stat().st_size)})")
+    else:
+        print(f"  {WARN} no brain yet — run: ace --setup")
+    print()
+    return 0
+
+
+def clean():
+    targets = []
+
+    def add(label, path, command=None):
+        path = Path(path).expanduser()
+        if not path.exists():
+            return
+        size = 0
+        try:
+            if path.is_dir():
+                for root, _dirs, files in os.walk(path):
+                    for name in files:
+                        try:
+                            size += (Path(root) / name).stat().st_size
+                        except OSError:
+                            pass
+            else:
+                size = path.stat().st_size
+        except OSError:
+            pass
+        if size > 1024 * 1024:
+            targets.append((label, path, size, command))
+
+    add("apt package cache", "/var/cache/apt/archives", ["sudo", "apt-get", "clean"])
+    add("thumbnail cache", "~/.cache/thumbnails")
+    add("trash", "~/.local/share/Trash")
+    add("old journal logs", "/var/log/journal",
+        ["sudo", "journalctl", "--vacuum-time=7d"])
+    add("pip cache", "~/.cache/pip")
+    add("firefox cache", "~/.cache/mozilla")
+
+    if not targets:
+        print(f"{GREEN}✓{R} nothing worth cleaning — under a megabyte everywhere.")
+        return 0
+
+    head("reclaimable")
+    total = 0
+    for label, path, size, _cmd in targets:
+        print(f"  {human(size):>6}  {WHITE}{label}{R} {GREY}{path}{R}")
+        total += size
+    print(f"\n  {WHITE}{human(total)} total{R}")
+
+    try:
+        answer = input(f"\n{DRED}└─{RED}▶{R} clean it all? [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return 1
+    if answer not in ("y", "yes"):
+        print(f"{GREY}nothing removed.{R}")
+        return 0
+
+    for label, path, _size, command in targets:
+        try:
+            if command:
+                run(command)
+            elif path.is_dir():
+                for child in path.iterdir():
+                    if child.is_dir():
+                        shutil.rmtree(child, ignore_errors=True)
+                    else:
+                        child.unlink(missing_ok=True)
+            print(f"  {OK} {label}")
+        except Exception as err:
+            print(f"  {BAD} {label}: {err}")
+    print()
+    return 0
+
+
+def net():
+    head("interfaces")
+    result = run(["ip", "-brief", "address"])
+    if result.returncode == 127:
+        print(f"  {GREY}  iproute2 not available{R}")
+    for line in (result.stdout or "").splitlines():
+        parts = line.split()
+        if not parts or parts[0] == "lo":
+            continue
+        state = parts[1] if len(parts) > 1 else "?"
+        mark = OK if state == "UP" else GREY + "○" + R
+        print(f"  {mark} {WHITE}{parts[0]:<10}{R} {GREY}{state}  "
+              f"{' '.join(parts[2:]) or 'no address'}{R}")
+
+    head("wi-fi")
+    if shutil.which("nmcli"):
+        result = run(["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL", "device", "wifi"])
+        for line in (result.stdout or "").splitlines():
+            if line.startswith("yes:"):
+                _active, ssid, signal = (line.split(":") + ["", ""])[:3]
+                print(f"  {OK} connected to {WHITE}{ssid}{R} {GREY}(signal {signal}%){R}")
+                break
+        else:
+            print(f"  {WARN} not connected to wi-fi")
+    else:
+        print(f"  {GREY}  nmcli not available{R}")
+
+    head("internet")
+    ping = run(["ping", "-c", "2", "-W", "3", "1.1.1.1"])
+    if ping.returncode == 0:
+        match = re.search(r"= [\d.]+/([\d.]+)/", ping.stdout or "")
+        latency = f" ({float(match.group(1)):.0f} ms)" if match else ""
+        print(f"  {OK} reachable{latency}")
+    else:
+        print(f"  {BAD} cannot reach the internet")
+
+    dns = run(["getent", "hosts", "debian.org"])
+    print(f"  {OK if dns.returncode == 0 else BAD} name lookup "
+          f"{'working' if dns.returncode == 0 else 'failing'}")
+    print()
+    return 0
+
+
+def top():
+    head("memory hogs")
+    result = run(["ps", "-eo", "rss=,comm=", "--sort=-rss"])
+    lines = [l for l in (result.stdout or "").splitlines() if l.strip()][:12]
+    for line in lines:
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        rss = int(parts[0]) * 1024
+        bar = "█" * min(24, rss // (48 * 1024 * 1024) + 1)
+        print(f"  {human(rss):>6}  {RED}{bar:<24}{R} {GREY}{parts[1]}{R}")
+    print()
+    return 0
+
+
+COMMANDS = {"doctor": doctor, "clean": clean, "net": net, "top": top}
+
+
+def main():
+    action = sys.argv[1] if len(sys.argv) > 1 else ""
+    if action in COMMANDS:
+        return COMMANDS[action]()
+    print(__doc__)
+    return 0 if action in ("", "-h", "--help") else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

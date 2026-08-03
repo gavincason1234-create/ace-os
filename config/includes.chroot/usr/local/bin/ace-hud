@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""ace-hud — the comms panel: a framed rectangle with a live frequency trace.
+
+  ace-hud --say "text"        speak it and show the panel while it talks
+  ace-hud --show "text" -d 4  show for four seconds without speaking
+  ace-hud --demo              show a sample panel
+
+Modelled on a military radio overlay: corner brackets, a callsign strip, a
+waveform running the width of the frame, and the words typing out under it.
+Sits at the bottom of the screen, ignores clicks, and disappears on its own.
+"""
+
+import argparse
+import math
+import os
+import random
+import subprocess
+import sys
+import threading
+import time
+
+RATE = 30.0
+
+
+def speak_async(text):
+    for candidate in (["espeak-ng", "-v", "en-us+m3", "-s", "165", "-p", "42", text],
+                      ["espeak", "-v", "en-us+m3", "-s", "165", text]):
+        try:
+            return subprocess.Popen(candidate, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+        except (FileNotFoundError, OSError):
+            continue
+    return None
+
+
+def estimate_duration(text):
+    """espeak at 165 wpm, with a floor so short lines stay readable."""
+    words = max(1, len(text.split()))
+    return max(2.2, words / (165 / 60.0) + 0.8)
+
+
+def run_gui(text, duration, speak):
+    try:
+        import gi
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("Gdk", "3.0")
+        from gi.repository import Gtk, Gdk, GLib
+        import cairo
+    except Exception as err:
+        print(f"ace-hud: GTK unavailable ({err})", file=sys.stderr)
+        if speak:
+            proc = speak_async(text)
+            if proc:
+                proc.wait()
+        return 1
+
+    display = Gdk.Display.get_default()
+    monitor = display.get_primary_monitor() or display.get_monitor(0)
+    area = monitor.get_geometry()
+
+    width = min(760, int(area.width * 0.62))
+    height = 148
+    x = area.x + (area.width - width) // 2
+    y = area.y + area.height - height - int(area.height * 0.09)
+
+    window = Gtk.Window(type=Gtk.WindowType.POPUP)
+    window.set_app_paintable(True)
+    window.set_decorated(False)
+    window.set_keep_above(True)
+    window.set_skip_taskbar_hint(True)
+    window.set_accept_focus(False)
+    window.set_default_size(width, height)
+    window.move(x, y)
+
+    state = {"t": 0.0, "chars": 0, "alpha": 0.0, "closing": False,
+             "levels": [0.0] * 96}
+
+    def on_draw(_widget, ctx):
+        t = state["t"]
+        alpha = state["alpha"]
+
+        # panel body
+        ctx.set_source_rgba(0.035, 0.024, 0.028, 0.94 * alpha)
+        ctx.rectangle(0, 0, width, height)
+        ctx.fill()
+
+        # frame
+        ctx.set_source_rgba(0.88, 0.06, 0.16, 0.85 * alpha)
+        ctx.set_line_width(1.4)
+        ctx.rectangle(1, 1, width - 2, height - 2)
+        ctx.stroke()
+
+        # corner brackets
+        arm = 22
+        ctx.set_line_width(2.6)
+        for cx, cy, dx, dy in ((0, 0, 1, 1), (width, 0, -1, 1),
+                               (0, height, 1, -1), (width, height, -1, -1)):
+            ctx.move_to(cx + dx * 2, cy + dy * (2 + arm))
+            ctx.line_to(cx + dx * 2, cy + dy * 2)
+            ctx.line_to(cx + dx * (2 + arm), cy + dy * 2)
+            ctx.stroke()
+
+        # callsign strip
+        ctx.select_font_face("DejaVu Sans Mono", cairo.FONT_SLANT_NORMAL,
+                             cairo.FONT_WEIGHT_BOLD)
+        ctx.set_font_size(11)
+        ctx.set_source_rgba(0.88, 0.06, 0.16, alpha)
+        ctx.move_to(16, 24)
+        ctx.show_text("ACE")
+        ctx.set_source_rgba(0.55, 0.52, 0.53, alpha)
+        ctx.set_font_size(9.5)
+        ctx.move_to(48, 24)
+        ctx.show_text("· LOCAL · SECURE CHANNEL")
+        # blinking live dot
+        if int(t * 2) % 2 == 0:
+            ctx.set_source_rgba(0.88, 0.06, 0.16, alpha)
+            ctx.arc(width - 20, 20, 3.4, 0, 2 * math.pi)
+            ctx.fill()
+
+        # separator
+        ctx.set_source_rgba(0.48, 0.05, 0.09, 0.8 * alpha)
+        ctx.set_line_width(1)
+        ctx.move_to(14, 34)
+        ctx.line_to(width - 14, 34)
+        ctx.stroke()
+
+        # the frequency trace across the frame
+        mid = 62
+        span = width - 32
+        levels = state["levels"]
+        ctx.set_line_width(1.6)
+        ctx.set_source_rgba(0.95, 0.12, 0.22, alpha)
+        ctx.move_to(16, mid)
+        for index, level in enumerate(levels):
+            px = 16 + span * index / (len(levels) - 1)
+            py = mid - level * 26
+            ctx.line_to(px, py)
+        ctx.stroke()
+        # ghost reflection
+        ctx.set_source_rgba(0.88, 0.06, 0.16, 0.22 * alpha)
+        ctx.move_to(16, mid)
+        for index, level in enumerate(levels):
+            px = 16 + span * index / (len(levels) - 1)
+            ctx.line_to(px, mid + level * 13)
+        ctx.stroke()
+        # baseline
+        ctx.set_source_rgba(0.40, 0.05, 0.08, 0.55 * alpha)
+        ctx.set_line_width(0.8)
+        ctx.move_to(16, mid)
+        ctx.line_to(width - 16, mid)
+        ctx.stroke()
+
+        # the words, typing out
+        ctx.select_font_face("DejaVu Sans Mono", cairo.FONT_SLANT_NORMAL,
+                             cairo.FONT_WEIGHT_NORMAL)
+        ctx.set_font_size(13)
+        ctx.set_source_rgba(0.92, 0.90, 0.90, alpha)
+        shown = text[:state["chars"]]
+        line_y = 104
+        line = ""
+        for word in shown.split(" "):
+            probe = (line + " " + word).strip()
+            if ctx.text_extents(probe)[2] > width - 36 and line:
+                ctx.move_to(16, line_y)
+                ctx.show_text(line)
+                line_y += 18
+                line = word
+                if line_y > height - 10:
+                    line = ""
+                    break
+            else:
+                line = probe
+        if line:
+            ctx.move_to(16, line_y)
+            ctx.show_text(line)
+        # caret
+        if state["chars"] < len(text) and int(t * 3) % 2 == 0:
+            ctx.set_source_rgba(0.88, 0.06, 0.16, alpha)
+            ctx.rectangle(16 + ctx.text_extents(line)[4], line_y - 10, 7, 13)
+            ctx.fill()
+        return False
+
+    def tick():
+        state["t"] += 1 / RATE
+        t = state["t"]
+
+        # fade in, hold, fade out
+        if state["closing"]:
+            state["alpha"] = max(0.0, state["alpha"] - 0.08)
+            if state["alpha"] <= 0.01:
+                Gtk.main_quit()
+                return False
+        else:
+            state["alpha"] = min(1.0, state["alpha"] + 0.12)
+            if t >= duration:
+                state["closing"] = True
+
+        # waveform: scroll left, push a new sample in
+        speaking = state["chars"] < len(text)
+        energy = 0.85 if speaking else 0.16
+        sample = (math.sin(t * 11.0) * 0.45 + math.sin(t * 23.7) * 0.28
+                  + random.uniform(-0.35, 0.35)) * energy
+        levels = state["levels"]
+        levels.pop(0)
+        levels.append(max(-1.0, min(1.0, sample)))
+
+        # type the text out over the first 70% of the display time
+        target = duration * 0.7
+        state["chars"] = min(len(text), int(len(text) * min(1.0, t / max(0.4, target))))
+
+        window.queue_draw()
+        return True
+
+    window.connect("draw", on_draw)
+    window.show_all()
+    gdk_window = window.get_window()
+    if gdk_window:
+        try:
+            import cairo as _cairo
+            gdk_window.input_shape_combine_region(_cairo.Region(), 0, 0)
+        except Exception:
+            pass
+
+    if speak:
+        threading.Thread(target=lambda: (speak_async(text) or type("", (), {"wait": lambda s: None})()).wait(),
+                         daemon=True).start()
+
+    GLib.timeout_add(int(1000 / RATE), tick)
+    Gtk.main()
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="ace-hud", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--say", metavar="TEXT", help="speak and display")
+    parser.add_argument("--show", metavar="TEXT", help="display only")
+    parser.add_argument("-d", "--duration", type=float, default=0.0,
+                        help="seconds on screen (default: fits the text)")
+    parser.add_argument("--demo", action="store_true")
+    args = parser.parse_args()
+
+    if args.demo:
+        text = "Radar sweep complete. Four contacts on the local band, no unknown devices."
+    else:
+        text = args.say or args.show
+    if not text:
+        parser.print_help()
+        return 0
+
+    if not os.environ.get("DISPLAY"):
+        # No desktop: still speak, just without the panel.
+        if args.say:
+            proc = speak_async(text)
+            if proc:
+                proc.wait()
+        else:
+            print(text)
+        return 0
+
+    duration = args.duration or estimate_duration(text)
+    return run_gui(text, duration, speak=bool(args.say))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

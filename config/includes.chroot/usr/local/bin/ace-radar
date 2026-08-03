@@ -1,0 +1,473 @@
+#!/usr/bin/env python3
+"""ace-radar — a sweeping radar built from real scans, not decoration.
+
+  ace-radar              live radar: Wi-Fi, Bluetooth, LAN, USB
+  ace-radar --once       one scan printed as a table, then exit
+  ace-radar --only wifi  restrict the sources
+  ace-radar --json       machine-readable output
+
+What the picture means
+  bearing  a stable angle derived from each device's hardware address, so a
+           given device always sits in the same direction. It is an identity,
+           NOT a real-world compass direction.
+  range    distance from the centre tracks signal strength: strong signal
+           plots close in, weak plots far out.
+
+Everything shown is passive and local: nearby network names your adapter can
+already hear, Bluetooth devices announcing themselves, machines your computer
+has already talked to on your own network, and your own USB hardware.
+"""
+
+import argparse
+import curses
+import json
+import math
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import zlib
+from pathlib import Path
+
+BANDS = {"wifi": "WIFI", "bt": "BT", "lan": "LAN", "usb": "USB"}
+
+
+def run(cmd, timeout=15):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return subprocess.CompletedProcess(cmd, 127, "", "")
+
+
+def bearing_of(identity):
+    """Stable angle for an address, so a device keeps its place on screen."""
+    return (zlib.crc32(identity.encode()) % 3600) / 10.0
+
+
+class Contact:
+    __slots__ = ("band", "name", "ident", "signal", "detail", "bearing", "seen")
+
+    def __init__(self, band, name, ident, signal, detail=""):
+        self.band = band
+        self.name = name or "(hidden)"
+        self.ident = ident
+        self.signal = signal          # 0..100, higher = closer
+        self.detail = detail
+        self.bearing = bearing_of(ident or name)
+        self.seen = time.time()
+
+    @property
+    def range_fraction(self):
+        return max(0.08, min(1.0, 1.0 - (self.signal / 100.0)))
+
+    def as_dict(self):
+        return {"band": self.band, "name": self.name, "id": self.ident,
+                "signal": self.signal, "detail": self.detail,
+                "bearing": round(self.bearing, 1)}
+
+
+# ----------------------------------------------------------------- sources
+
+def scan_wifi():
+    contacts = []
+    result = run(["nmcli", "-t", "-f", "SSID,BSSID,SIGNAL,CHAN,SECURITY",
+                  "device", "wifi", "list"], timeout=20)
+    if result.returncode == 0 and result.stdout.strip():
+        for line in result.stdout.splitlines():
+            # nmcli escapes the colons inside a BSSID as \:
+            parts = re.split(r"(?<!\\):", line)
+            parts = [p.replace("\\:", ":") for p in parts]
+            if len(parts) < 5:
+                continue
+            ssid, bssid, signal, channel, security = parts[:5]
+            if not bssid:
+                continue
+            try:
+                strength = int(signal)
+            except ValueError:
+                strength = 0
+            contacts.append(Contact(
+                "wifi", ssid, bssid, strength,
+                f"ch {channel} · {security or 'open'}"))
+        return contacts
+
+    # Fall back to the live link only, straight from the kernel.
+    try:
+        for line in Path("/proc/net/wireless").read_text().splitlines()[2:]:
+            fields = line.split()
+            if len(fields) >= 4:
+                name = fields[0].rstrip(":")
+                quality = float(fields[2].rstrip("."))
+                contacts.append(Contact("wifi", f"link:{name}", name,
+                                        int(min(100, quality)), "connected link"))
+    except Exception:
+        pass
+    return contacts
+
+
+def scan_bluetooth(seconds=6):
+    if not shutil.which("bluetoothctl"):
+        return []
+    # A short discovery window, then read what the daemon collected.
+    run(["bluetoothctl", "--timeout", str(seconds), "scan", "on"],
+        timeout=seconds + 6)
+    contacts = []
+    listing = run(["bluetoothctl", "devices"])
+    for line in (listing.stdout or "").splitlines():
+        match = re.match(r"Device ([0-9A-F:]{17}) (.*)", line.strip(), re.I)
+        if not match:
+            continue
+        address, name = match.group(1), match.group(2)
+        info = run(["bluetoothctl", "info", address], timeout=6)
+        rssi = 0
+        rssi_match = re.search(r"RSSI:\s*(-?\d+)", info.stdout or "")
+        if rssi_match:
+            # RSSI roughly -100 (far) .. -40 (close)
+            rssi = max(0, min(100, int((int(rssi_match.group(1)) + 100) * 1.6)))
+        connected = "yes" in (re.search(r"Connected:\s*(\w+)", info.stdout or "")
+                              or type("", (), {"group": lambda *_: "no"})()).group(1).lower()
+        contacts.append(Contact("bt", name, address, rssi or 25,
+                                "connected" if connected else "in range"))
+    return contacts
+
+
+def scan_lan():
+    contacts = []
+    result = run(["ip", "neigh"])
+    for line in (result.stdout or "").splitlines():
+        fields = line.split()
+        if len(fields) < 5 or "lladdr" not in fields:
+            continue
+        address = fields[0]
+        mac = fields[fields.index("lladdr") + 1]
+        state = fields[-1]
+        if state in ("FAILED", "INCOMPLETE"):
+            continue
+        strength = {"REACHABLE": 85, "PERMANENT": 90, "DELAY": 60,
+                    "STALE": 45, "PROBE": 55}.get(state, 40)
+        contacts.append(Contact("lan", address, mac, strength, state.lower()))
+    return contacts
+
+
+def scan_usb():
+    contacts = []
+    result = run(["lsusb"])
+    for line in (result.stdout or "").splitlines():
+        match = re.match(r"Bus (\d+) Device (\d+): ID ([0-9a-f:]+) (.*)", line)
+        if not match:
+            continue
+        ident, name = match.group(3), match.group(4).strip()
+        if "root hub" in name.lower():
+            continue
+        contacts.append(Contact("usb", name, ident, 95, "attached"))
+    return contacts
+
+
+SOURCES = {"wifi": scan_wifi, "bt": scan_bluetooth, "lan": scan_lan, "usb": scan_usb}
+
+SCAN_DIR = Path.home() / ".local/share/ace/scans"
+LATEST = SCAN_DIR / "latest.json"
+
+
+def save_scan(contacts):
+    """Keep the last sweep on disk so ACE can be asked about it later."""
+    try:
+        SCAN_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {"time": time.time(),
+                   "stamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                   "contacts": [c.as_dict() for c in contacts]}
+        LATEST.write_text(json.dumps(payload, indent=2))
+    except Exception:
+        pass
+
+
+def load_scan():
+    try:
+        return json.loads(LATEST.read_text())
+    except Exception:
+        return None
+
+
+def summarise(payload):
+    """One spoken/printed sentence about a saved sweep."""
+    if not payload or not payload.get("contacts"):
+        return "I have no saved scan yet. Run the radar first."
+    contacts = payload["contacts"]
+    counts = {}
+    for contact in contacts:
+        counts[contact["band"]] = counts.get(contact["band"], 0) + 1
+    parts = []
+    for band, label in (("wifi", "Wi-Fi network"), ("bt", "Bluetooth device"),
+                        ("lan", "device on your network"), ("usb", "USB device")):
+        if counts.get(band):
+            count = counts[band]
+            parts.append(f"{count} {label}{'s' if count != 1 else ''}")
+    strongest = max(contacts, key=lambda c: c["signal"])
+    return (f"Last sweep at {payload['stamp'].split()[1]} found "
+            + ", ".join(parts)
+            + f". The strongest was {strongest['name']}.")
+
+
+def collect(bands):
+    contacts = []
+    for band in bands:
+        try:
+            contacts.extend(SOURCES[band]())
+        except Exception:
+            continue
+    save_scan(contacts)
+    return contacts
+
+
+# ------------------------------------------------------------------ curses
+
+BAND_ATTR = {}
+
+
+def draw(screen, contacts, angle, bands, scanning, status):
+    screen.erase()
+    height, width = screen.getmaxyx()
+    if height < 12 or width < 46:
+        screen.addstr(0, 0, "terminal too small")
+        screen.refresh()
+        return
+
+    panel_width = min(38, max(24, width // 3))
+    radar_width = width - panel_width - 1
+    cx = radar_width // 2
+    cy = height // 2
+    radius = max(4, min(cy - 2, radar_width // 4 - 1))
+
+    # range rings
+    for ring in range(1, 4):
+        rr = radius * ring / 3
+        steps = int(2 * math.pi * rr * 2) + 12
+        for step in range(steps):
+            theta = 2 * math.pi * step / steps
+            x = int(cx + rr * math.cos(theta) * 2)
+            y = int(cy + rr * math.sin(theta))
+            if 0 <= x < radar_width and 0 <= y < height:
+                try:
+                    screen.addch(y, x, ".", BAND_ATTR["ring"])
+                except curses.error:
+                    pass
+
+    # cross hairs
+    for x in range(max(0, cx - radius * 2), min(radar_width, cx + radius * 2 + 1)):
+        try:
+            screen.addch(cy, x, "─", BAND_ATTR["ring"])
+        except curses.error:
+            pass
+    for y in range(max(0, cy - radius), min(height, cy + radius + 1)):
+        try:
+            screen.addch(y, cx, "│", BAND_ATTR["ring"])
+        except curses.error:
+            pass
+
+    # sweep line with a fading tail
+    for trail in range(14):
+        theta = math.radians(angle - trail * 3)
+        attr = BAND_ATTR["sweep"] if trail < 3 else BAND_ATTR["sweep_dim"]
+        for step in range(radius * 2):
+            rr = step / 2
+            x = int(cx + rr * math.cos(theta) * 2)
+            y = int(cy + rr * math.sin(theta))
+            if 0 <= x < radar_width and 0 <= y < height:
+                try:
+                    screen.addch(y, x, "·" if trail else "•", attr)
+                except curses.error:
+                    pass
+
+    # contacts, lit brightest as the sweep passes over them
+    for contact in contacts:
+        theta = math.radians(contact.bearing)
+        rr = radius * contact.range_fraction
+        x = int(cx + rr * math.cos(theta) * 2)
+        y = int(cy + rr * math.sin(theta))
+        if not (0 <= x < radar_width and 0 <= y < height):
+            continue
+        delta = (angle - contact.bearing) % 360
+        hot = delta < 26
+        glyph = {"wifi": "◆", "bt": "▲", "lan": "■", "usb": "●"}[contact.band]
+        attr = BAND_ATTR["hot"] if hot else BAND_ATTR[contact.band]
+        try:
+            screen.addch(y, x, glyph, attr | (curses.A_BOLD if hot else 0))
+            if hot and x + 2 < radar_width:
+                screen.addstr(y, x + 1, contact.name[:radar_width - x - 2],
+                              BAND_ATTR["hot"])
+        except curses.error:
+            pass
+
+    # centre
+    try:
+        screen.addch(cy, cx, "@", BAND_ATTR["hot"] | curses.A_BOLD)
+    except curses.error:
+        pass
+
+    # ---- side panel
+    left = radar_width + 1
+    for y in range(height):
+        try:
+            screen.addch(y, radar_width, "│", BAND_ATTR["ring"])
+        except curses.error:
+            pass
+
+    def put(row, text, attr=0):
+        if 0 <= row < height:
+            try:
+                screen.addstr(row, left, text[:panel_width - 1], attr)
+            except curses.error:
+                pass
+
+    put(0, "ACE RADAR", BAND_ATTR["hot"] | curses.A_BOLD)
+    put(1, "─" * (panel_width - 1), BAND_ATTR["ring"])
+    counts = {band: sum(1 for c in contacts if c.band == band) for band in BANDS}
+    put(2, f"wifi {counts['wifi']:<3} bt {counts['bt']:<3} "
+           f"lan {counts['lan']:<3} usb {counts['usb']}", BAND_ATTR["label"])
+    put(3, ("scanning…" if scanning else status)[:panel_width - 1],
+        BAND_ATTR["sweep"])
+    put(4, "─" * (panel_width - 1), BAND_ATTR["ring"])
+
+    row = 5
+    for contact in sorted(contacts, key=lambda c: -c.signal):
+        if row >= height - 2:
+            break
+        glyph = {"wifi": "◆", "bt": "▲", "lan": "■", "usb": "●"}[contact.band]
+        bars = "▁▂▃▄▅▆▇█"[min(7, contact.signal // 13)]
+        put(row, f"{glyph} {contact.name[:panel_width - 10]:<{panel_width - 10}} "
+                 f"{bars} {contact.signal:>3}", BAND_ATTR[contact.band])
+        row += 1
+
+    put(height - 1, "q quit · r rescan · 1-4 bands", BAND_ATTR["label"])
+    screen.refresh()
+
+
+def radar_loop(screen, bands, interval):
+    curses.curs_set(0)
+    screen.nodelay(True)
+    curses.start_color()
+    curses.use_default_colors()
+    pairs = [("hot", curses.COLOR_WHITE), ("wifi", curses.COLOR_RED),
+             ("bt", curses.COLOR_CYAN), ("lan", curses.COLOR_YELLOW),
+             ("usb", curses.COLOR_GREEN), ("ring", curses.COLOR_RED),
+             ("sweep", curses.COLOR_RED), ("sweep_dim", curses.COLOR_RED),
+             ("label", curses.COLOR_WHITE)]
+    for index, (name, colour) in enumerate(pairs, start=1):
+        curses.init_pair(index, colour, -1)
+        attr = curses.color_pair(index)
+        if name in ("ring", "sweep_dim"):
+            attr |= curses.A_DIM
+        if name == "sweep":
+            attr |= curses.A_BOLD
+        BAND_ATTR[name] = attr
+
+    state = {"contacts": [], "scanning": True, "status": "", "stop": False}
+
+    def worker():
+        while not state["stop"]:
+            state["scanning"] = True
+            found = collect(bands)
+            state["contacts"] = found
+            state["scanning"] = False
+            state["status"] = f"{len(found)} contacts · {time.strftime('%H:%M:%S')}"
+            for _ in range(int(interval * 10)):
+                if state["stop"]:
+                    return
+                time.sleep(0.1)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+
+    angle = 0.0
+    try:
+        while True:
+            draw(screen, state["contacts"], angle, bands,
+                 state["scanning"], state["status"])
+            angle = (angle + 4) % 360
+            time.sleep(0.05)
+            key = screen.getch()
+            if key in (ord("q"), 27):
+                break
+            if key == ord("r"):
+                state["contacts"] = []
+            if key in (ord("1"), ord("2"), ord("3"), ord("4")):
+                band = ["wifi", "bt", "lan", "usb"][key - ord("1")]
+                if band in bands and len(bands) > 1:
+                    bands.remove(band)
+                elif band not in bands:
+                    bands.append(band)
+    finally:
+        state["stop"] = True
+
+
+def print_table(contacts):
+    RED = "\033[38;5;196m"
+    GREY = "\033[38;5;245m"
+    WHITE = "\033[38;5;255m"
+    RESET = "\033[0m"
+    if not contacts:
+        print(f"{GREY}no contacts found.{RESET}")
+        return
+    current = None
+    for contact in sorted(contacts, key=lambda c: (c.band, -c.signal)):
+        if contact.band != current:
+            current = contact.band
+            print(f"\n{RED}── {BANDS[current]} {'─' * (52 - len(BANDS[current]))}{RESET}")
+        bars = "▁▂▃▄▅▆▇█"[min(7, contact.signal // 13)]
+        print(f"  {RED}{bars}{RESET} {WHITE}{contact.name[:28]:<28}{RESET} "
+              f"{GREY}{contact.ident:<18} {contact.detail}{RESET}")
+    print()
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="ace-radar", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--once", action="store_true", help="scan once and print")
+    parser.add_argument("--json", action="store_true", help="scan once as JSON")
+    parser.add_argument("--only", default="wifi,bt,lan,usb",
+                        help="comma list: wifi,bt,lan,usb")
+    parser.add_argument("--interval", type=float, default=12.0,
+                        help="seconds between rescans")
+    parser.add_argument("--last", action="store_true",
+                        help="reprint the previous scan without rescanning")
+    parser.add_argument("--summary", action="store_true",
+                        help="one line about the previous scan (for ACE to read out)")
+    args = parser.parse_args()
+
+    if args.summary:
+        print(summarise(load_scan()))
+        return 0
+    if args.last:
+        payload = load_scan()
+        if not payload:
+            print("no saved scan yet — run ace-radar first")
+            return 1
+        print(f"\nsaved sweep · {payload['stamp']}")
+        restored = [Contact(c["band"], c["name"], c["id"], c["signal"], c["detail"])
+                    for c in payload["contacts"]]
+        print_table(restored)
+        return 0
+
+    bands = [b.strip() for b in args.only.split(",") if b.strip() in SOURCES]
+    if not bands:
+        print("ace-radar: no valid bands selected", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps([c.as_dict() for c in collect(bands)], indent=2))
+        return 0
+    if args.once:
+        print_table(collect(bands))
+        return 0
+
+    try:
+        curses.wrapper(radar_loop, bands, args.interval)
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

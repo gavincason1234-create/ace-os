@@ -1,0 +1,524 @@
+#!/usr/bin/env python3
+"""ACE — the local AI assistant that lives on this machine.
+
+No account, no internet after setup, no data leaves the laptop: the model
+runs on this CPU. Tuned for the ASUS L510M (2 cores, 4 GB RAM).
+
+  ace                 start chatting
+  ace --setup [name]  download a model (default: the one in config)
+  ace --selftest      non-interactive check used by CI
+  ace "question"      ask one question and exit
+"""
+
+import argparse
+import codecs
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import urllib.request
+from pathlib import Path
+
+VERSION = "1.0"
+
+# --- BlackArch-flavoured palette: black canvas, blood red, bone white -------
+R = "\033[0m"
+RED = "\033[38;5;196m"
+DRED = "\033[38;5;88m"
+WHITE = "\033[38;5;255m"
+GREY = "\033[38;5;244m"
+DGREY = "\033[38;5;238m"
+GREEN = "\033[38;5;46m"
+CYAN = "\033[38;5;51m"
+YELL = "\033[38;5;220m"
+BOLD = "\033[1m"
+
+BANNER = rf"""{RED}
+      ▄▄▄       ▄████▄  ▓█████
+     ▒████▄    ▒██▀ ▀█  ▓█   ▀
+     ▒██  ▀█▄  ▒▓█    ▄ ▒███
+     ░██▄▄▄▄██ ▒▓▓▄ ▄██▒▒▓█  ▄
+      ▓█   ▓██▒▒ ▓███▀ ░░▒████▒
+      ▒▒   ▓▒█░░ ░▒ ▒  ░░░ ▒░ ░{R}
+{DRED}    ──────────────────────────────────{R}
+{GREY}     local ai · runs on this machine · v{VERSION}{R}
+"""
+
+MODELS = {
+    "1.5b": {
+        "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/"
+               "resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "size": 1117320736,
+        "note": "smarter, a few words per second on this laptop",
+    },
+    "0.5b": {
+        "file": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+        "url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/"
+               "resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+        "size": 491400032,
+        "note": "lighter and quicker, less clever",
+    },
+}
+DEFAULT_MODEL = "1.5b"
+
+SYSTEM_PROMPT = os.environ.get("ACE_SYSTEM_PROMPT") or (
+    "You are ACE, a helpful AI assistant running locally on the user's own "
+    "laptop. Be direct and concise. Use plain language. If you are unsure, "
+    "say so rather than inventing facts."
+)
+
+ENGINE_DIRS = [Path("/opt/ace-ai/bin"), Path.home() / ".local/share/ace/bin"]
+MODEL_DIRS = [Path("/usr/share/ace/models"), Path.home() / ".local/share/ace/models"]
+CONFIG = Path.home() / ".config/ace/config.json"
+
+
+# ----------------------------------------------------------------- helpers
+
+def load_config():
+    try:
+        return json.loads(CONFIG.read_text())
+    except Exception:
+        return {}
+
+
+def save_config(cfg):
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG.write_text(json.dumps(cfg, indent=2))
+
+
+def find_engine():
+    for directory in ENGINE_DIRS:
+        candidate = directory / "llama-cli"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    found = shutil.which("llama-cli")
+    return Path(found) if found else None
+
+
+def find_model(name):
+    filename = MODELS[name]["file"]
+    for directory in MODEL_DIRS:
+        candidate = directory / filename
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def human(size):
+    return f"{size / 1e9:.1f} GB" if size >= 1e9 else f"{size / 1e6:.0f} MB"
+
+
+def download(url, dest: Path, expected=0):
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    req = urllib.request.Request(url, headers={"User-Agent": "ace/1.0"})
+    with urllib.request.urlopen(req) as resp, open(tmp, "wb") as out:
+        total = int(resp.headers.get("Content-Length") or expected or 0)
+        done = 0
+        while True:
+            chunk = resp.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk)
+            done += len(chunk)
+            if total and sys.stdout.isatty():
+                pct = 100 * done // total
+                bar = "█" * (pct // 3)
+                sys.stdout.write(
+                    f"\r  {RED}{bar:<33}{R} {pct:3d}%  {human(done)}/{human(total)}"
+                )
+                sys.stdout.flush()
+    if sys.stdout.isatty():
+        sys.stdout.write("\n")
+    tmp.replace(dest)
+    return dest
+
+
+def setup_model(name, quiet=False):
+    if name not in MODELS:
+        raise SystemExit(f"unknown model '{name}'. choose from: {', '.join(MODELS)}")
+    existing = find_model(name)
+    if existing:
+        if not quiet:
+            print(f"{GREEN}✓{R} {name} already installed: {existing}")
+        return existing
+    spec = MODELS[name]
+    dest = MODEL_DIRS[-1] / spec["file"]
+    if not quiet:
+        print(f"{CYAN}downloading brain '{name}' ({human(spec['size'])}) — one time only{R}")
+    download(spec["url"], dest, spec["size"])
+    if not quiet:
+        print(f"{GREEN}✓{R} installed: {dest}")
+    return dest
+
+
+# ------------------------------------------------------------------ engine
+
+_flag_cache = None
+
+
+def engine_flags(engine):
+    """llama.cpp flags drift between releases — only pass what this build knows."""
+    global _flag_cache
+    if _flag_cache is None:
+        try:
+            out = subprocess.run([str(engine), "--help"], capture_output=True,
+                                 text=True, timeout=30)
+            _flag_cache = (out.stdout or "") + (out.stderr or "")
+        except Exception:
+            _flag_cache = ""
+    return _flag_cache
+
+
+def build_prompt(history):
+    parts = [f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n"]
+    for role, text in history:
+        parts.append(f"<|im_start|>{role}\n{text}<|im_end|>\n")
+    parts.append("<|im_start|>assistant\n")
+    return "".join(parts)
+
+
+def generate(engine, model, history, on_token, n_predict=1024, ctx=4096):
+    """Run one turn. Streams text to on_token(str). Returns the full reply."""
+    help_text = engine_flags(engine)
+    threads = max(1, min(os.cpu_count() or 2, 4))
+
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
+                                     encoding="utf-8") as pf:
+        pf.write(build_prompt(history))
+        prompt_path = pf.name
+
+    cmd = [str(engine), "-m", str(model), "-f", prompt_path,
+           "-n", str(n_predict), "-c", str(ctx), "-t", str(threads),
+           "--temp", "0.7"]
+    for flag in ("--no-display-prompt", "-no-cnv", "--simple-io"):
+        if flag in help_text:
+            cmd.append(flag)
+    if "-ngl" in help_text or "--n-gpu-layers" in help_text:
+        cmd += ["-ngl", "0"]
+
+    # --- speed and memory on a 4 GB, 2-core machine ------------------------
+    # Flash attention: less memory per token and a faster attention pass.
+    if "--flash-attn" in help_text or "-fa" in help_text:
+        cmd.append("--flash-attn" if "--flash-attn" in help_text else "-fa")
+    # An 8-bit KV cache roughly halves what the context costs in RAM, which
+    # is what lets a 4096-token window fit here at all.
+    if "--cache-type-k" in help_text:
+        cmd += ["--cache-type-k", "q8_0", "--cache-type-v", "q8_0"]
+    # Reuse the processed prefix between turns: without this the CPU
+    # re-reads the whole conversation on every single reply.
+    if "--prompt-cache" in help_text and os.environ.get("ACE_NO_CACHE") != "1":
+        cache = Path(tempfile.gettempdir()) / f"ace-prompt-{os.getuid()}.bin"
+        cmd += ["--prompt-cache", str(cache)]
+        if "--prompt-cache-all" in help_text:
+            cmd.append("--prompt-cache-all")
+
+    reply = []
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        while True:
+            raw = proc.stdout.read(64)
+            if not raw:
+                break
+            text = decoder.decode(raw)
+            if not text:
+                continue
+            # The model may emit its stop token as literal text; end there.
+            if "<|im_end|>" in "".join(reply) + text:
+                text = ("".join(reply) + text).split("<|im_end|>")[0][len("".join(reply)):]
+                if text:
+                    reply.append(text)
+                    on_token(text)
+                proc.terminate()
+                break
+            reply.append(text)
+            on_token(text)
+        proc.wait(timeout=10)
+    except KeyboardInterrupt:
+        proc.terminate()
+        raise
+    finally:
+        try:
+            os.unlink(prompt_path)
+        except OSError:
+            pass
+        if proc.poll() is None:
+            proc.kill()
+
+    out = "".join(reply)
+    out = re.sub(r"\[end of text\]\s*$", "", out).strip()
+    return out
+
+
+# --------------------------------------------------------------- built-ins
+
+def sys_report():
+    lines = []
+
+    def read(path):
+        try:
+            return Path(path).read_text()
+        except Exception:
+            return ""
+
+    meminfo = read("/proc/meminfo")
+    total = avail = 0
+    for line in meminfo.splitlines():
+        if line.startswith("MemTotal:"):
+            total = int(line.split()[1]) * 1024
+        elif line.startswith("MemAvailable:"):
+            avail = int(line.split()[1]) * 1024
+    if total:
+        used = total - avail
+        lines.append(f"memory   {human(used)} used of {human(total)} "
+                     f"({100*used//total}%)")
+
+    model_name = ""
+    for line in read("/proc/cpuinfo").splitlines():
+        if line.startswith("model name"):
+            model_name = line.split(":", 1)[1].strip()
+            break
+    if model_name:
+        lines.append(f"cpu      {model_name} ({os.cpu_count()} threads)")
+
+    try:
+        usage = shutil.disk_usage("/")
+        lines.append(f"disk     {human(usage.used)} used of {human(usage.total)} "
+                     f"({human(usage.free)} free)")
+    except Exception:
+        pass
+
+    uptime = read("/proc/uptime").split()
+    if uptime:
+        secs = int(float(uptime[0]))
+        lines.append(f"uptime   {secs // 3600}h {(secs % 3600) // 60}m")
+
+    for path in ("/etc/aceos-release", "/etc/os-release"):
+        text = read(path)
+        if text:
+            match = re.search(r'PRETTY_NAME="?([^"\n]+)', text)
+            lines.append(f"system   {match.group(1) if match else text.strip()}")
+            break
+    return "\n".join(lines)
+
+
+HELP = f"""{WHITE}commands{R}
+  {RED}/help{R}      this list
+  {RED}/sys{R}       memory, cpu, disk, uptime
+  {RED}/model{R}     show or switch brain  (e.g. /model 0.5b)
+  {RED}/voice{R}     speak replies aloud  (/voice on | off)
+  {RED}/setup{R}     download the brain if it is missing
+  {RED}/clear{R}     forget this conversation
+  {RED}/exit{R}      quit  (or press Ctrl-D)
+
+{GREY}anything else you type is sent to the local AI.{R}
+{GREY}to talk instead of type, run{R} {RED}ace-voice{R}{GREY}.{R}"""
+
+
+def say(text):
+    """Speak a reply out loud, if any speech output is installed."""
+    if not text.strip():
+        return
+    speaker = shutil.which("ace-voice")
+    try:
+        if speaker:
+            subprocess.Popen([speaker, "--say", text],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        espeak = shutil.which("espeak-ng") or shutil.which("espeak")
+        if espeak:
+            subprocess.Popen([espeak, "-v", "en-us+m3", "-s", "165", "-p", "42", text],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
+# ------------------------------------------------------------------- shell
+
+def prompt_line(model_name):
+    return (f"{DRED}┌─[{RED}ace{DRED}@{RED}{model_name}{DRED}]\n"
+            f"└─{RED}▶{R} ")
+
+
+def repl(model_name):
+    engine = find_engine()
+    if not engine:
+        print(f"{RED}!{R} AI engine missing (expected /opt/ace-ai/bin/llama-cli).")
+        return 1
+
+    model = find_model(model_name)
+    print(BANNER)
+    if model:
+        print(f"{GREY}brain{R} {WHITE}{model_name}{R} {GREY}·{R} "
+              f"{GREY}offline · type{R} {RED}/help{R} {GREY}for commands{R}\n")
+    else:
+        print(f"{YELL}!{R} no brain installed yet. type {RED}/setup{R} "
+              f"to download it ({human(MODELS[model_name]['size'])}, one time).\n")
+
+    history = []
+    voice = bool(load_config().get("voice", False))
+    while True:
+        try:
+            line = input(prompt_line(model_name)).strip()
+        except (EOFError, KeyboardInterrupt):
+            print(f"\n{GREY}bye.{R}")
+            return 0
+        if not line:
+            continue
+
+        if line in ("/exit", "/quit"):
+            print(f"{GREY}bye.{R}")
+            return 0
+        if line == "/help":
+            print(HELP + "\n")
+            continue
+        if line == "/clear":
+            history.clear()
+            print(f"{GREY}conversation cleared.{R}\n")
+            continue
+        if line == "/sys":
+            print(f"{CYAN}{sys_report()}{R}\n")
+            continue
+        if line.startswith("/model"):
+            parts = line.split()
+            if len(parts) == 1:
+                for name, spec in MODELS.items():
+                    mark = f"{GREEN}✓{R}" if find_model(name) else f"{DGREY}·{R}"
+                    here = " (active)" if name == model_name else ""
+                    print(f"  {mark} {WHITE}{name:<6}{R} {GREY}{human(spec['size'])}"
+                          f"  {spec['note']}{here}{R}")
+                print()
+            elif parts[1] in MODELS:
+                model_name = parts[1]
+                cfg = load_config()
+                cfg["model"] = model_name
+                save_config(cfg)
+                model = find_model(model_name)
+                state = "ready" if model else "not downloaded — type /setup"
+                print(f"{GREEN}✓{R} brain set to {WHITE}{model_name}{R} ({state})\n")
+            else:
+                print(f"{RED}!{R} unknown brain. options: {', '.join(MODELS)}\n")
+            continue
+        if line.startswith("/voice"):
+            parts = line.split()
+            if len(parts) > 1 and parts[1] in ("on", "off"):
+                voice = parts[1] == "on"
+                cfg = load_config()
+                cfg["voice"] = voice
+                save_config(cfg)
+            else:
+                voice = not voice
+            state = f"{GREEN}on{R}" if voice else f"{GREY}off{R}"
+            print(f"spoken replies: {state}\n")
+            if voice:
+                say("Voice on.")
+            continue
+        if line == "/setup":
+            try:
+                model = setup_model(model_name)
+            except Exception as err:
+                print(f"{RED}!{R} download failed: {err}")
+            print()
+            continue
+        if line.startswith("/"):
+            print(f"{RED}!{R} unknown command. try {RED}/help{R}\n")
+            continue
+
+        if not model:
+            model = find_model(model_name)
+            if not model:
+                print(f"{YELL}!{R} no brain yet — type {RED}/setup{R} first.\n")
+                continue
+
+        history.append(("user", line))
+        print(f"{DGREY}···{R}", end="\r", flush=True)
+        first = [True]
+
+        def emit(text):
+            if first[0]:
+                sys.stdout.write("\r   \r")
+                first[0] = False
+            sys.stdout.write(text)
+            sys.stdout.flush()
+
+        try:
+            reply = generate(engine, model, history, emit)
+        except KeyboardInterrupt:
+            print(f"\n{GREY}(stopped){R}\n")
+            history.pop()
+            continue
+        print("\n")
+        if voice:
+            say(reply)
+        history.append(("assistant", reply))
+        # Keep the context small: this CPU re-reads history every turn.
+        if len(history) > 8:
+            del history[:2]
+    return 0
+
+
+def selftest(model_name):
+    print("engine:", end=" ")
+    engine = find_engine()
+    if not engine:
+        print("MISSING"); return 1
+    print(engine)
+
+    print("model: ", end=" ")
+    model = find_model(model_name)
+    if not model:
+        print("MISSING"); return 1
+    print(model)
+
+    print("generating...")
+    chunks = []
+    reply = generate(engine, model, [("user", "Reply with exactly: ACE ONLINE")],
+                     chunks.append, n_predict=24)
+    print("reply:", repr(reply[:200]))
+    if not reply.strip():
+        print("FAIL: empty reply")
+        return 1
+    print("SELFTEST OK")
+    return 0
+
+
+def main():
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    parser = argparse.ArgumentParser(prog="ace", add_help=True,
+                                     description="local AI assistant")
+    parser.add_argument("question", nargs="*", help="ask once and exit")
+    parser.add_argument("--setup", nargs="?", const="", metavar="NAME",
+                        help="download a brain and exit")
+    parser.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--version", action="version", version=f"ace {VERSION}")
+    args = parser.parse_args()
+
+    model_name = load_config().get("model", DEFAULT_MODEL)
+    if model_name not in MODELS:
+        model_name = DEFAULT_MODEL
+
+    if args.setup is not None:
+        setup_model(args.setup or model_name)
+        return 0
+    if args.selftest:
+        return selftest(model_name)
+    if args.question:
+        engine, model = find_engine(), find_model(model_name)
+        if not engine or not model:
+            print("ace: engine or brain missing — run: ace --setup", file=sys.stderr)
+            return 1
+        reply = generate(engine, model, [("user", " ".join(args.question))],
+                         lambda t: (sys.stdout.write(t), sys.stdout.flush()))
+        print()
+        return 0
+    return repl(model_name)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

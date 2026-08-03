@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""ace-art — render text as big letters woven from the ACE digit sequence.
+
+  ace-art ACE
+  ace-art --scale 2 --plain SYSTEM
+  ace-art --seq 1010 HELLO
+
+Every lit pixel is filled from the countdown 09 08 07 ... 01, so the glyphs
+read as numbers up close and as letters from across the room.
+"""
+
+import argparse
+import shutil
+import sys
+
+DIGITS = "090807060504030201"
+
+# 5x7 bitmap font, one hex byte per row (5 significant bits), top row first.
+FONT = {
+    "A": "0E11111F111111", "B": "1E111E1111111E", "C": "0E10101010100E",
+    "D": "1C121111111C1C", "E": "1F10101E10101F", "F": "1F10101E101010",
+    "G": "0E1010171111 0F".replace(" ", ""), "H": "1111111F111111",
+    "I": "1F04040404041F", "J": "010101010111 0E".replace(" ", ""),
+    "K": "1112141814 1211".replace(" ", ""), "L": "1010101010101F",
+    "M": "111B1515111111", "N": "1119191513 1311".replace(" ", ""),
+    "O": "0E1111111111 0E".replace(" ", ""), "P": "1E11111E101010",
+    "Q": "0E11111115120D", "R": "1E11111E141211",
+    "S": "0F10100E01011E", "T": "1F04040404 0404".replace(" ", ""),
+    "U": "111111111111 0E".replace(" ", ""), "V": "1111111111 0A04".replace(" ", ""),
+    "W": "1111111515 1B11".replace(" ", ""), "X": "11110A040A1111",
+    "Y": "11110A04040404", "Z": "1F01020408101F",
+    "0": "0E1113151911 0E".replace(" ", ""), "1": "040C0404040 40E".replace(" ", ""),
+    "2": "0E110102 04081F".replace(" ", ""), "3": "1F0204020111 0E".replace(" ", ""),
+    "4": "02060A121F0202", "5": "1F101E010111 0E".replace(" ", ""),
+    "6": "0608101E1111 0E".replace(" ", ""), "7": "1F010204080808",
+    "8": "0E11110E1111 0E".replace(" ", ""), "9": "0E11110F01020C",
+    "-": "0000001F000000", ".": "0000000000 0404".replace(" ", ""),
+    " ": "00000000000000",
+}
+
+RED = "\033[38;5;196m"
+DRED = "\033[38;5;88m"
+MID = "\033[38;5;160m"
+RESET = "\033[0m"
+SHADES = [DRED, MID, RED, MID]
+
+
+def glyph_rows(char):
+    spec = FONT.get(char.upper())
+    if spec is None:
+        spec = FONT[" "]
+    return [int(spec[i:i + 2], 16) for i in range(0, 14, 2)]
+
+
+def render(text, scale=1, seq=DIGITS, plain=False):
+    glyphs = [glyph_rows(c) for c in text]
+    lines = []
+    tick = 0
+    for row_index in range(7):
+        for _ in range(scale):
+            parts = []
+            for glyph in glyphs:
+                bits = glyph[row_index]
+                for column in range(5):
+                    lit = bits & (1 << (4 - column))
+                    for _ in range(scale):
+                        if lit:
+                            parts.append(seq[tick % len(seq)])
+                        else:
+                            parts.append(" ")
+                        tick += 1
+                parts.append("  ")
+            lines.append("".join(parts).rstrip())
+    if plain:
+        return lines
+    coloured = []
+    for index, line in enumerate(lines):
+        coloured.append(f"{SHADES[index % len(SHADES)]}{line}{RESET}")
+    return coloured
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="ace-art", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("text", nargs="*", default=["ACE"],
+                        help="what to draw (default: ACE)")
+    parser.add_argument("--scale", type=int, default=1, help="pixel size (default 1)")
+    parser.add_argument("--seq", default=DIGITS, help="fill sequence")
+    parser.add_argument("--plain", action="store_true", help="no colour")
+    parser.add_argument("--center", action="store_true", help="centre in the terminal")
+    args = parser.parse_args()
+
+    text = " ".join(args.text) if args.text else "ACE"
+    scale = max(1, min(args.scale, 6))
+    lines = render(text, scale, args.seq or DIGITS, args.plain)
+
+    if args.center:
+        width = shutil.get_terminal_size((80, 24)).columns
+        plain_lines = render(text, scale, args.seq or DIGITS, plain=True)
+        pad = max(0, (width - max((len(l) for l in plain_lines), default=0)) // 2)
+        lines = [" " * pad + line for line in lines]
+
+    print()
+    for line in lines:
+        print(line)
+    print()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

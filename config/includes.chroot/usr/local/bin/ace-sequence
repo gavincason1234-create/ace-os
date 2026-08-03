@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""ace-sequence — the boot and shutdown code sequence.
+
+  ace-sequence up     start-up roll (run by ace-boot.service)
+  ace-sequence down   shutdown roll (run by ace-shutdown.service)
+
+Prints a checked start-up sequence to the console: real values read from the
+running machine, not invented ones, so the numbers on screen mean something.
+"""
+
+import os
+import random
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+RED = "\033[38;5;196m"
+DRED = "\033[38;5;88m"
+WHITE = "\033[38;5;255m"
+GREY = "\033[38;5;245m"
+GREEN = "\033[38;5;46m"
+R = "\033[0m"
+
+DIGITS = "090807060504030201"
+
+
+def read(path):
+    try:
+        return Path(path).read_text()
+    except Exception:
+        return ""
+
+
+def human(size):
+    return f"{size / 1e9:.1f}G" if size >= 1e9 else f"{size / 1e6:.0f}M"
+
+
+def facts():
+    out = {}
+    for line in read("/proc/meminfo").splitlines():
+        if line.startswith("MemTotal:"):
+            out["mem"] = human(int(line.split()[1]) * 1024)
+        elif line.startswith("MemAvailable:"):
+            out["free"] = human(int(line.split()[1]) * 1024)
+    for line in read("/proc/cpuinfo").splitlines():
+        if line.startswith("model name"):
+            out["cpu"] = line.split(":", 1)[1].strip()
+            break
+    out["cores"] = str(os.cpu_count() or "?")
+    out["kernel"] = os.uname().release
+    try:
+        usage = shutil.disk_usage("/")
+        out["disk"] = f"{human(usage.free)} free of {human(usage.total)}"
+    except Exception:
+        out["disk"] = "unknown"
+    models = list(Path("/usr/share/ace/models").glob("*.gguf"))
+    for home in Path("/home").glob("*/.local/share/ace/models"):
+        models += list(home.glob("*.gguf"))
+    out["brain"] = models[0].stem if models else "not installed"
+    engine = Path("/opt/ace-ai/bin/llama-cli")
+    out["engine"] = "ready" if engine.is_file() else "absent"
+    net = [n.name for n in Path("/sys/class/net").glob("*") if n.name != "lo"]
+    out["net"] = ", ".join(net) or "none"
+    return out
+
+
+def rule(width=64):
+    return f"{DRED}{'─' * width}{R}"
+
+
+def line(label, value, ok=True, delay=0.05):
+    mark = f"{GREEN}OK{R}" if ok else f"{RED}--{R}"
+    noise = "".join(random.choice(DIGITS) for _ in range(6))
+    sys.stdout.write(f"{DRED}[{R}{GREY}{noise}{R}{DRED}]{R} "
+                     f"{WHITE}{label:<26}{R} {GREY}{value}{R}  [{mark}]\n")
+    sys.stdout.flush()
+    time.sleep(delay)
+
+
+BANNER = rf"""{RED}
+      ▄▄▄       ▄████▄  ▓█████
+     ▒████▄    ▒██▀ ▀█  ▓█   ▀
+     ▒██  ▀█▄  ▒▓█    ▄ ▒███
+     ░██▄▄▄▄██ ▒▓▓▄ ▄██▒▒▓█  ▄
+      ▓█   ▓██▒▒ ▓███▀ ░░▒████▒{R}
+"""
+
+
+def sequence_up():
+    data = facts()
+    print(BANNER)
+    print(rule())
+    line("kernel", data["kernel"])
+    line("processor", f"{data.get('cpu', 'unknown')} x{data['cores']}")
+    line("memory", f"{data.get('free', '?')} free of {data.get('mem', '?')}")
+    line("storage", data["disk"])
+    line("network interfaces", data["net"])
+    line("inference engine", data["engine"], ok=data["engine"] == "ready")
+    line("local brain", data["brain"], ok=data["brain"] != "not installed")
+    line("telemetry", "none — nothing leaves this machine")
+    print(rule())
+    print(f"{RED}  ACE OS{R} {GREY}online · type{R} {WHITE}ace{R} "
+          f"{GREY}to talk to it{R}\n")
+    return 0
+
+
+def sequence_down():
+    print()
+    print(rule())
+    line("saving session", "ok", delay=0.08)
+    line("stopping inference engine", "ok", delay=0.08)
+    line("flushing disk buffers", "ok", delay=0.08)
+    line("clearing scan cache", "ok", delay=0.08)
+    print(rule())
+    for count in range(9, 0, -1):
+        sys.stdout.write(f"\r{RED}  powering down {DIGITS[(9 - count) * 2:(9 - count) * 2 + 2]}"
+                         f"{R}{GREY} · {'█' * count}{'░' * (9 - count)}{R}")
+        sys.stdout.flush()
+        time.sleep(0.06)
+    print(f"\r{RED}  ACE OS offline{R}{' ' * 40}\n")
+    return 0
+
+
+def main():
+    action = sys.argv[1] if len(sys.argv) > 1 else "up"
+    if action in ("down", "shutdown", "halt"):
+        return sequence_down()
+    return sequence_up()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

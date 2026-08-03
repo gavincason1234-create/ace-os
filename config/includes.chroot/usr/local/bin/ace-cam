@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""ace-cam — the camera, on command.
+
+  ace-cam list          which cameras this machine has
+  ace-cam show          live view in a window (q closes it)
+  ace-cam snap [file]   still photo, saved to ~/Pictures by default
+  ace-cam ascii         live-ish view drawn in the terminal
+  ace-cam look          take a photo and have ACE describe it (needs vision)
+
+The camera is only ever opened by an explicit command — nothing here runs on
+its own, and the light comes on exactly when a frame is being taken.
+"""
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+RED = "\033[38;5;196m"
+GREY = "\033[38;5;245m"
+WHITE = "\033[38;5;255m"
+GREEN = "\033[38;5;46m"
+R = "\033[0m"
+
+RAMP = " .:-=+*#%@"
+PICTURES = Path.home() / "Pictures"
+
+
+def devices():
+    found = []
+    for node in sorted(Path("/dev").glob("video*")):
+        name = node.name
+        label = ""
+        sysname = Path(f"/sys/class/video4linux/{name}/name")
+        try:
+            label = sysname.read_text().strip()
+        except Exception:
+            pass
+        # Only capture nodes report a readable name and support capture.
+        found.append((str(node), label or "camera"))
+    return found
+
+
+def pick_device(requested=None):
+    available = devices()
+    if requested:
+        return requested
+    if not available:
+        return None
+    return available[0][0]
+
+
+def cmd_list(_args):
+    available = devices()
+    if not available:
+        print(f"{RED}!{R} no camera found (looked for /dev/video*)")
+        return 1
+    for node, label in available:
+        print(f"  {GREEN}●{R} {WHITE}{node}{R}  {GREY}{label}{R}")
+    return 0
+
+
+def cmd_show(args):
+    node = pick_device(args.device)
+    if not node:
+        print(f"{RED}!{R} no camera found")
+        return 1
+    if shutil.which("mpv"):
+        command = ["mpv", "--really-quiet", "--profile=low-latency",
+                   "--untimed", f"av://v4l2:{node}"]
+    elif shutil.which("ffplay"):
+        command = ["ffplay", "-loglevel", "quiet", "-f", "v4l2", "-i", node]
+    else:
+        print(f"{RED}!{R} install mpv or ffmpeg to view the camera")
+        return 1
+    print(f"{GREY}opening {node} — press q in the window to close{R}")
+    return subprocess.run(command).returncode
+
+
+def capture_frame(node, width=0, height=0, gray=False):
+    """Grab a single frame with ffmpeg; returns raw bytes or None."""
+    if not shutil.which("ffmpeg"):
+        return None
+    filters = []
+    if width and height:
+        filters.append(f"scale={width}:{height}")
+    if gray:
+        filters.append("format=gray")
+    command = ["ffmpeg", "-loglevel", "quiet", "-f", "v4l2", "-i", node,
+               "-frames:v", "1"]
+    if filters:
+        command += ["-vf", ",".join(filters)]
+    command += ["-f", "rawvideo", "-"] if gray else ["-f", "image2", "-"]
+    result = subprocess.run(command, capture_output=True)
+    return result.stdout or None
+
+
+def cmd_snap(args):
+    node = pick_device(args.device)
+    if not node:
+        print(f"{RED}!{R} no camera found")
+        return 1
+    if not shutil.which("ffmpeg"):
+        print(f"{RED}!{R} ffmpeg is needed to take photos")
+        return 1
+    destination = Path(args.file).expanduser() if args.file else (
+        PICTURES / f"ace-{time.strftime('%Y%m%d-%H%M%S')}.jpg")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    # A couple of throwaway frames let the sensor settle on exposure.
+    result = subprocess.run(
+        ["ffmpeg", "-loglevel", "quiet", "-y", "-f", "v4l2", "-i", node,
+         "-frames:v", "1", "-vf", "select=gte(n\\,4)", str(destination)],
+        capture_output=True)
+    if result.returncode != 0 or not destination.exists():
+        print(f"{RED}!{R} capture failed — is the camera in use by another app?")
+        return 1
+    size = destination.stat().st_size // 1024
+    print(f"{GREEN}✓{R} saved {WHITE}{destination}{R} {GREY}({size} KB){R}")
+    print(destination)
+    return 0
+
+
+def cmd_ascii(args):
+    node = pick_device(args.device)
+    if not node:
+        print(f"{RED}!{R} no camera found")
+        return 1
+    if not shutil.which("ffmpeg"):
+        print(f"{RED}!{R} ffmpeg is needed for the terminal view")
+        return 1
+    size = shutil.get_terminal_size((80, 24))
+    width = max(20, min(args.width or size.columns - 2, 200))
+    height = max(10, int(width * 0.42))
+    frames = args.frames
+
+    sys.stdout.write("\033[?25l")
+    try:
+        for index in range(frames):
+            raw = capture_frame(node, width, height, gray=True)
+            if not raw or len(raw) < width * height:
+                print(f"{RED}!{R} could not read a frame")
+                return 1
+            lines = []
+            for row in range(height):
+                chunk = raw[row * width:(row + 1) * width]
+                lines.append("".join(RAMP[min(len(RAMP) - 1,
+                                              value * len(RAMP) // 256)]
+                                     for value in chunk))
+            if index:
+                sys.stdout.write(f"\033[{height + 1}A")
+            sys.stdout.write(f"{RED}" + "\n".join(lines) + f"{R}\n")
+            sys.stdout.flush()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sys.stdout.write("\033[?25h")
+    return 0
+
+
+def cmd_look(args):
+    """Photo + description, if a vision model is installed."""
+    node = pick_device(args.device)
+    if not node:
+        print(f"{RED}!{R} no camera found")
+        return 1
+    shot = PICTURES / "ace-look.jpg"
+    args.file = str(shot)
+    if cmd_snap(args) != 0:
+        return 1
+
+    vision = None
+    for candidate in ("/opt/ace-ai/bin/llama-mtmd-cli",
+                      "/opt/ace-ai/bin/llama-llava-cli"):
+        if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+            vision = candidate
+            break
+    models = sorted((Path.home() / ".local/share/ace/models").glob("*mmproj*"))
+    if not vision or not models:
+        print(f"{GREY}photo taken. describing what the camera sees needs a "
+              f"vision model, which is not installed on this build.{R}")
+        return 0
+
+    base = sorted((Path.home() / ".local/share/ace/models").glob("*vision*.gguf"))
+    if not base:
+        print(f"{GREY}vision model file missing.{R}")
+        return 0
+    result = subprocess.run(
+        [vision, "-m", str(base[0]), "--mmproj", str(models[0]),
+         "--image", str(shot), "-p", "Describe what you see, briefly."],
+        capture_output=True, text=True)
+    print((result.stdout or "").strip())
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="ace-cam", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--device", help="camera node, e.g. /dev/video0")
+    sub = parser.add_subparsers(dest="action")
+
+    sub.add_parser("list", help="show cameras")
+    sub.add_parser("show", help="live window")
+    snap = sub.add_parser("snap", help="take a photo")
+    snap.add_argument("file", nargs="?", help="where to save it")
+    art = sub.add_parser("ascii", help="terminal view")
+    art.add_argument("--width", type=int, default=0)
+    art.add_argument("--frames", type=int, default=60)
+    sub.add_parser("look", help="photo + description")
+
+    args = parser.parse_args()
+    actions = {"list": cmd_list, "show": cmd_show, "snap": cmd_snap,
+               "ascii": cmd_ascii, "look": cmd_look}
+    if not args.action:
+        parser.print_help()
+        return 0
+    if not hasattr(args, "file"):
+        args.file = None
+    return actions[args.action](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

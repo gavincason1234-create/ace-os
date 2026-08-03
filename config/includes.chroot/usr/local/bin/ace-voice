@@ -1,0 +1,375 @@
+#!/usr/bin/env python3
+"""ace-voice — talk to ACE and hear it answer, entirely offline.
+
+  ace-voice              hold a conversation: speak, ACE replies out loud
+  ace-voice --once       listen for one command, act, exit
+  ace-voice --say "..."  just speak this text
+  ace-voice --setup      download the speech-recognition model (~78 MB)
+  ace-voice --check      report which pieces are present
+
+Speech in  : whisper.cpp (tiny.en) running on this CPU
+Speech out : piper if installed, otherwise espeak-ng
+Brains     : the same local model `ace` uses — nothing is sent anywhere.
+"""
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.request
+from pathlib import Path
+
+ENGINE_DIRS = [Path("/opt/ace-ai/bin"), Path.home() / ".local/share/ace/bin"]
+MODEL_DIRS = [Path("/usr/share/ace/models"), Path.home() / ".local/share/ace/models"]
+WHISPER_MODEL = "ggml-tiny.en.bin"
+WHISPER_URL = ("https://huggingface.co/ggerganov/whisper.cpp/"
+               "resolve/main/ggml-tiny.en.bin")
+WHISPER_SIZE = 77704715
+
+RED = "\033[38;5;196m"
+GREY = "\033[38;5;245m"
+WHITE = "\033[38;5;255m"
+GREEN = "\033[38;5;46m"
+R = "\033[0m"
+
+
+def which(*names):
+    for name in names:
+        for directory in ENGINE_DIRS:
+            candidate = directory / name
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def whisper_model():
+    for directory in MODEL_DIRS:
+        candidate = directory / WHISPER_MODEL
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+# ------------------------------------------------------------------ speech
+
+def speak(text, wait=True):
+    """Say something. piper sounds far better; espeak-ng always works."""
+    text = re.sub(r"[*_`#]|\[.*?\]\(.*?\)", " ", text).strip()
+    if not text:
+        return
+    piper = which("piper")
+    voice = None
+    for directory in MODEL_DIRS:
+        voices = sorted(directory.glob("*.onnx"))
+        if voices:
+            voice = voices[0]
+            break
+
+    if piper and voice and which("aplay"):
+        proc = subprocess.Popen(
+            f'{piper} --model "{voice}" --output_file - | aplay -q -r 22050 -f S16_LE -t raw -',
+            shell=True, stdin=subprocess.PIPE)
+        proc.communicate(text.encode())
+        return
+
+    # Prefer the comms panel: it speaks and shows the waveform together.
+    hud = shutil.which("ace-hud")
+    if hud and os.environ.get("DISPLAY") and not os.environ.get("ACE_NO_HUD"):
+        proc = subprocess.Popen([hud, "--say", text],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if wait:
+            proc.wait()
+        return
+
+    espeak = which("espeak-ng", "espeak")
+    if not espeak:
+        print(f"{GREY}(no speech output installed){R}", file=sys.stderr)
+        return
+    cmd = [espeak, "-v", "en-us+m3", "-s", "165", "-p", "42", "-a", "180", text]
+    if wait:
+        subprocess.run(cmd, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.Popen(cmd, stderr=subprocess.DEVNULL)
+
+
+def record(seconds=8):
+    """Record from the microphone, stopping early on silence when sox is here."""
+    wav = Path(tempfile.mkdtemp(prefix="ace-voice-")) / "in.wav"
+    rec = shutil.which("rec")
+    if rec:
+        cmd = [rec, "-q", "-c", "1", "-r", "16000", "-b", "16", str(wav),
+               "silence", "1", "0.1", "2%", "1", "1.4", "2%",
+               "trim", "0", str(seconds)]
+    else:
+        arecord = shutil.which("arecord")
+        if not arecord:
+            print("ace-voice: no recorder found (install sox or alsa-utils)",
+                  file=sys.stderr)
+            return None
+        cmd = [arecord, "-q", "-f", "S16_LE", "-r", "16000", "-c", "1",
+               "-d", str(seconds), str(wav)]
+    subprocess.run(cmd, stderr=subprocess.DEVNULL)
+    return wav if wav.is_file() and wav.stat().st_size > 2000 else None
+
+
+def transcribe(wav):
+    engine = which("whisper-cli", "main", "whisper")
+    model = whisper_model()
+    if not engine or not model:
+        return None
+    result = subprocess.run(
+        [engine, "-m", str(model), "-f", str(wav), "-nt", "-np", "-t",
+         str(max(1, min(os.cpu_count() or 2, 4)))],
+        capture_output=True, text=True)
+    text = (result.stdout or "").strip()
+    text = re.sub(r"\[[^\]]*\]", " ", text)          # [BLANK_AUDIO] etc.
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
+# ---------------------------------------------------------------- commands
+
+def run_capture(cmd):
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        return (result.stdout or "").strip()
+    except Exception:
+        return ""
+
+
+def run_bg(*cmd):
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except Exception:
+        return False
+
+
+def battery():
+    base = Path("/sys/class/power_supply")
+    for entry in sorted(base.glob("BAT*")):
+        try:
+            capacity = (entry / "capacity").read_text().strip()
+            status = (entry / "status").read_text().strip().lower()
+            return f"Battery is at {capacity} percent and {status}."
+        except Exception:
+            continue
+    return "I could not read the battery."
+
+
+def memory_line():
+    total = avail = 0
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemTotal:"):
+            total = int(line.split()[1])
+        elif line.startswith("MemAvailable:"):
+            avail = int(line.split()[1])
+    if not total:
+        return "I could not read memory."
+    used_pct = 100 * (total - avail) // total
+    return (f"Memory is {used_pct} percent used, "
+            f"{avail // 1024} megabytes free.")
+
+
+def handle_command(text):
+    """Return spoken response if this was a device command, else None."""
+    lowered = text.lower().strip(" .!?")
+
+    if re.search(r"\b(what|whats)?\s*time\b", lowered):
+        import datetime
+        return "It is " + datetime.datetime.now().strftime("%-I:%M %p") + "."
+    if "battery" in lowered or "power left" in lowered:
+        return battery()
+    if "memory" in lowered or "ram" in lowered:
+        return memory_line()
+
+    if re.search(r"\b(show|pull up|bring up)\b.*\b(data|results?|findings?)\b",
+                 lowered):
+        return run_capture(["ace-radar", "--summary"]) or \
+            "I have no saved scan yet."
+    if re.search(r"\b(radar|scan|sweep|what.?s around|nearby)\b", lowered):
+        if re.search(r"\b(what|found|results?|last|read|tell)\b", lowered) \
+                and not re.search(r"\b(run|start|do|new|another)\b", lowered):
+            result = run_capture(["ace-radar", "--summary"])
+            return result or "I have no saved scan yet."
+        run_bg("xfce4-terminal", "--title=ACE Radar", "--command=ace-radar")
+        return "Sweeping now."
+    if re.search(r"\b(camera|cam|webcam|photo|picture|selfie|snapshot)\b", lowered):
+        if "photo" in lowered or "picture" in lowered or "snap" in lowered:
+            result = run_capture(["ace-cam", "snap"])
+            return "Photo taken." if result else "The camera did not respond."
+        if "what do you see" in lowered or "look" in lowered:
+            run_bg("xfce4-terminal", "--title=ACE Cam", "--command=ace-cam look")
+            return "Taking a look."
+        run_bg("ace-cam", "show")
+        return "Opening the camera."
+    if "what do you see" in lowered:
+        run_bg("xfce4-terminal", "--title=ACE Cam", "--command=ace-cam look")
+        return "Taking a look."
+    if re.search(r"\bhealth|doctor|check the system\b", lowered):
+        run_bg("xfce4-terminal", "--title=ACE Doctor", "--hold",
+               "--command=ace-sys doctor")
+        return "Running a health check."
+    match = re.search(r"\b(?:open|launch|start|run)\s+(.+)", lowered)
+    if match:
+        target = match.group(1).strip()
+        apps = {
+            "firefox": "firefox-esr", "browser": "firefox-esr",
+            "internet": "firefox-esr", "web": "firefox-esr",
+            "files": "thunar", "file manager": "thunar",
+            "terminal": "xfce4-terminal", "text editor": "mousepad",
+            "notes": "mousepad", "music": "vlc", "video": "vlc",
+            "task manager": "xfce4-taskmanager", "settings": "xfce4-settings-manager",
+        }
+        binary = apps.get(target) or target.replace(" ", "-")
+        if shutil.which(binary):
+            run_bg(binary)
+            return f"Opening {target}."
+        return f"I could not find {target}."
+
+    if "rain" in lowered or "screensaver" in lowered:
+        run_bg("ace-rain", "--screensaver")
+        return "Starting the rain."
+    if re.search(r"\brgb\b|\bring\b", lowered):
+        if "off" in lowered or "stop" in lowered:
+            run_bg("ace-rgb", "--off")
+            return "Ring off."
+        run_bg("ace-rgb")
+        return "Ring on."
+    if "volume up" in lowered or "louder" in lowered:
+        run_bg("amixer", "-q", "sset", "Master", "10%+")
+        return "Volume up."
+    if "volume down" in lowered or "quieter" in lowered:
+        run_bg("amixer", "-q", "sset", "Master", "10%-")
+        return "Volume down."
+    if "mute" in lowered:
+        run_bg("amixer", "-q", "sset", "Master", "toggle")
+        return "Muted."
+    if "lock" in lowered and "screen" in lowered:
+        run_bg("xflock4")
+        return "Locking."
+    if "screenshot" in lowered:
+        run_bg("xfce4-screenshooter", "-f")
+        return "Taking a screenshot."
+    return None
+
+
+def ask_ai(question):
+    ace = which("ace") or "/usr/local/bin/ace"
+    if not Path(ace).exists():
+        return "The AI is not installed yet."
+    result = subprocess.run([ace, question], capture_output=True, text=True,
+                            timeout=300)
+    reply = (result.stdout or "").strip()
+    return reply or "I did not get an answer."
+
+
+# -------------------------------------------------------------------- main
+
+def setup():
+    model_dir = MODEL_DIRS[-1]
+    model_dir.mkdir(parents=True, exist_ok=True)
+    dest = model_dir / WHISPER_MODEL
+    if dest.is_file():
+        print(f"{GREEN}✓{R} speech model already installed: {dest}")
+        return 0
+    print(f"{GREY}downloading speech recognition model (78 MB, one time){R}")
+    tmp = dest.with_suffix(".part")
+    req = urllib.request.Request(WHISPER_URL, headers={"User-Agent": "ace-voice"})
+    with urllib.request.urlopen(req) as resp, open(tmp, "wb") as out:
+        total = int(resp.headers.get("Content-Length") or WHISPER_SIZE)
+        done = 0
+        while True:
+            chunk = resp.read(1024 * 512)
+            if not chunk:
+                break
+            out.write(chunk)
+            done += len(chunk)
+            pct = 100 * done // total
+            sys.stdout.write(f"\r  {RED}{'█' * (pct // 3):<33}{R} {pct:3d}%")
+            sys.stdout.flush()
+    print()
+    tmp.replace(dest)
+    print(f"{GREEN}✓{R} installed: {dest}")
+    return 0
+
+
+def check():
+    rows = [
+        ("speech in  (whisper)", which("whisper-cli", "main", "whisper")),
+        ("speech model", whisper_model()),
+        ("speech out (piper)", which("piper")),
+        ("speech out (espeak)", which("espeak-ng", "espeak")),
+        ("recorder", shutil.which("rec") or shutil.which("arecord")),
+        ("ai brain", which("ace")),
+    ]
+    for label, value in rows:
+        mark = f"{GREEN}✓{R}" if value else f"{RED}✗{R}"
+        print(f"  {mark} {WHITE}{label:<22}{R} {GREY}{value or 'missing'}{R}")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="ace-voice", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--once", action="store_true")
+    parser.add_argument("--say", metavar="TEXT")
+    parser.add_argument("--setup", action="store_true")
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--seconds", type=int, default=8)
+    args = parser.parse_args()
+
+    if args.say:
+        speak(args.say)
+        return 0
+    if args.setup:
+        return setup()
+    if args.check:
+        return check()
+
+    if not whisper_model():
+        print(f"{RED}!{R} speech model missing — run: {WHITE}ace-voice --setup{R}")
+        return 1
+
+    print(f"\n{RED}ACE voice{R} {GREY}· offline · Ctrl-C to stop{R}")
+    speak("Ace is listening.", wait=False)
+
+    while True:
+        try:
+            print(f"\n{GREY}listening…{R} ", end="", flush=True)
+            wav = record(args.seconds)
+            if not wav:
+                print(f"{GREY}(nothing heard){R}")
+                if args.once:
+                    return 1
+                continue
+            print(f"{GREY}thinking…{R}", end="\r", flush=True)
+            heard = transcribe(wav)
+            shutil.rmtree(wav.parent, ignore_errors=True)
+            if not heard:
+                print(f"{GREY}(could not make that out){R}")
+                if args.once:
+                    return 1
+                continue
+
+            print(f"{WHITE}you:{R} {heard}")
+            response = handle_command(heard)
+            if response is None:
+                response = ask_ai(heard)
+            print(f"{RED}ace:{R} {response}")
+            speak(response)
+            if args.once:
+                return 0
+        except KeyboardInterrupt:
+            print(f"\n{GREY}bye.{R}")
+            return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

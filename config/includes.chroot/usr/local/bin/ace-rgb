@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""ace-rgb — a thin animated RGB ring around the screen edge.
+
+  ace-rgb                     start the ring (rainbow, 3 px)
+  ace-rgb --width 5 --speed 2
+  ace-rgb --style breathe --color "#e10f28"
+  ace-rgb --off               stop a running ring
+
+Drawn as four slim edge strips rather than a transparent overlay, so it
+needs no compositing and costs almost nothing on a slow GPU. Clicks pass
+straight through it.
+"""
+
+import argparse
+import colorsys
+import math
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+PIDFILE = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "ace-rgb.pid"
+
+
+def stop_running():
+    try:
+        pid = int(PIDFILE.read_text().strip())
+    except Exception:
+        print("ace-rgb: not running")
+        return 1
+    try:
+        os.kill(pid, signal.SIGTERM)
+        print(f"ace-rgb: stopped ({pid})")
+    except ProcessLookupError:
+        print("ace-rgb: not running")
+    finally:
+        PIDFILE.unlink(missing_ok=True)
+    return 0
+
+
+def parse_color(text):
+    text = text.lstrip("#")
+    if len(text) != 6:
+        raise argparse.ArgumentTypeError("colour must look like #e10f28")
+    return tuple(int(text[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="ace-rgb", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--width", type=int, default=3, help="ring thickness in px")
+    parser.add_argument("--speed", type=float, default=1.0, help="animation speed")
+    parser.add_argument("--style", choices=("rainbow", "chase", "breathe", "solid"),
+                        default="rainbow")
+    parser.add_argument("--color", type=parse_color, default=None,
+                        help="base colour for breathe/solid")
+    parser.add_argument("--fps", type=int, default=20)
+    parser.add_argument("--off", action="store_true", help="stop the running ring")
+    args = parser.parse_args()
+
+    if args.off:
+        return stop_running()
+
+    if not os.environ.get("DISPLAY"):
+        print("ace-rgb: needs a graphical session", file=sys.stderr)
+        return 1
+
+    try:
+        import gi
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("Gdk", "3.0")
+        from gi.repository import Gtk, Gdk, GLib
+        import cairo
+    except Exception as err:
+        print(f"ace-rgb: GTK unavailable ({err})", file=sys.stderr)
+        return 1
+
+    # Replace an already-running ring rather than stacking two.
+    if PIDFILE.exists():
+        stop_running()
+        time.sleep(0.2)
+    PIDFILE.write_text(str(os.getpid()))
+
+    display = Gdk.Display.get_default()
+    monitor = display.get_primary_monitor() or display.get_monitor(0)
+    area = monitor.get_geometry()
+    thickness = max(1, min(args.width, 40))
+
+    edges = [
+        ("top", area.x, area.y, area.width, thickness),
+        ("bottom", area.x, area.y + area.height - thickness, area.width, thickness),
+        ("left", area.x, area.y, thickness, area.height),
+        ("right", area.x + area.width - thickness, area.y, thickness, area.height),
+    ]
+
+    state = {"phase": 0.0}
+    windows = []
+
+    def colour_at(position):
+        """position: 0..1 around the ring."""
+        if args.style == "rainbow":
+            return colorsys.hsv_to_rgb((position + state["phase"]) % 1.0, 0.95, 1.0)
+        if args.style == "chase":
+            distance = (position - state["phase"]) % 1.0
+            glow = max(0.0, 1.0 - distance * 6)
+            base = args.color or (0.88, 0.06, 0.16)
+            return tuple(channel * (0.18 + 0.82 * glow) for channel in base)
+        if args.style == "breathe":
+            pulse = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(state["phase"] * 2 * math.pi))
+            base = args.color or (0.88, 0.06, 0.16)
+            return tuple(channel * pulse for channel in base)
+        return args.color or (0.88, 0.06, 0.16)
+
+    def make_edge(name, x, y, width, height):
+        window = Gtk.Window(type=Gtk.WindowType.POPUP)
+        window.set_app_paintable(True)
+        window.set_decorated(False)
+        window.set_keep_above(True)
+        window.set_skip_taskbar_hint(True)
+        window.set_skip_pager_hint(True)
+        window.set_accept_focus(False)
+        window.set_default_size(width, height)
+        window.move(x, y)
+
+        def on_draw(_widget, ctx):
+            horizontal = name in ("top", "bottom")
+            steps = max(2, (width if horizontal else height) // 12)
+            for index in range(steps):
+                fraction = index / steps
+                # map each edge onto its quarter of the ring
+                quarter = {"top": 0.0, "right": 0.25,
+                           "bottom": 0.5, "left": 0.75}[name]
+                position = quarter + fraction * 0.25
+                red, green, blue = colour_at(position)
+                ctx.set_source_rgb(red, green, blue)
+                if horizontal:
+                    ctx.rectangle(fraction * width, 0, width / steps + 1, height)
+                else:
+                    ctx.rectangle(0, fraction * height, width, height / steps + 1)
+                ctx.fill()
+            return False
+
+        window.connect("draw", on_draw)
+        window.show_all()
+        gdk_window = window.get_window()
+        if gdk_window:
+            # empty input region => every click lands on whatever is beneath
+            gdk_window.input_shape_combine_region(cairo.Region(), 0, 0)
+        return window
+
+    for name, x, y, width, height in edges:
+        windows.append(make_edge(name, x, y, width, height))
+
+    def tick():
+        state["phase"] += 0.004 * max(0.1, args.speed)
+        for window in windows:
+            window.queue_draw()
+        return True
+
+    def shutdown(*_args):
+        PIDFILE.unlink(missing_ok=True)
+        Gtk.main_quit()
+
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+    GLib.timeout_add(int(1000 / max(5, min(args.fps, 60))), tick)
+    print(f"ace-rgb: ring running ({args.style}, {thickness}px) — stop with: ace-rgb --off")
+    Gtk.main()
+    PIDFILE.unlink(missing_ok=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

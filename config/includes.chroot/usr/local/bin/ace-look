@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""ace-look — turn the live wallpaper and RGB ring on or off.
+
+  ace-look start      live wallpaper + RGB ring (what autostart runs)
+  ace-look stop       back to the still wallpaper, ring off
+  ace-look rain       live wallpaper only
+  ace-look ring       RGB ring only
+  ace-look status     what is running right now
+
+Settings live in ~/.config/ace/look.json, so your choice survives a reboot.
+Everything here is optional: on a slow machine, `ace-look stop` gives the
+CPU back to your browser.
+"""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+CONFIG = Path.home() / ".config/ace/look.json"
+DEFAULTS = {"rain": True, "ring": True, "fps": 10, "cell": 18,
+            "ring_width": 3, "ring_style": "rainbow"}
+
+RED = "\033[38;5;196m"
+GREY = "\033[38;5;245m"
+GREEN = "\033[38;5;46m"
+R = "\033[0m"
+
+
+def settings():
+    data = dict(DEFAULTS)
+    try:
+        data.update(json.loads(CONFIG.read_text()))
+    except Exception:
+        pass
+    return data
+
+
+def save(data):
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG.write_text(json.dumps(data, indent=2))
+
+
+def running(name):
+    return subprocess.run(["pgrep", "-f", name],
+                          stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL).returncode == 0
+
+
+def stop_rain():
+    subprocess.run(["pkill", "-f", "ace-rain --wallpaper"], check=False)
+
+
+def stop_ring():
+    subprocess.run(["ace-rgb", "--off"], check=False,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def start_rain(cfg):
+    stop_rain()
+    subprocess.Popen(["ace-rain", "--wallpaper",
+                      "--fps", str(cfg["fps"]), "--cell", str(cfg["cell"])],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def start_ring(cfg):
+    subprocess.Popen(["ace-rgb", "--width", str(cfg["ring_width"]),
+                      "--style", cfg["ring_style"]],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def main():
+    action = sys.argv[1] if len(sys.argv) > 1 else "status"
+    cfg = settings()
+
+    if action == "start":
+        if cfg["rain"]:
+            start_rain(cfg)
+        if cfg["ring"]:
+            start_ring(cfg)
+        return 0
+
+    if action == "stop":
+        stop_rain()
+        stop_ring()
+        cfg["rain"] = cfg["ring"] = False
+        save(cfg)
+        print(f"{GREY}live wallpaper and ring off.{R}")
+        return 0
+
+    if action == "rain":
+        cfg["rain"] = True
+        save(cfg)
+        start_rain(cfg)
+        print(f"{GREEN}✓{R} live wallpaper on")
+        return 0
+
+    if action == "ring":
+        cfg["ring"] = True
+        save(cfg)
+        start_ring(cfg)
+        print(f"{GREEN}✓{R} RGB ring on")
+        return 0
+
+    if action in ("status", "-h", "--help"):
+        if action != "status":
+            print(__doc__)
+            return 0
+        rain = running("ace-rain --wallpaper")
+        ring = running("ace-rgb")
+        for label, live in (("live wallpaper", rain), ("rgb ring", ring)):
+            mark = f"{GREEN}●{R}" if live else f"{GREY}○{R}"
+            print(f"  {mark} {label}: {'running' if live else 'off'}")
+        print(f"\n{GREY}settings: {CONFIG}{R}")
+        return 0
+
+    print(f"{RED}!{R} unknown action '{action}' — try: start, stop, rain, ring, status")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

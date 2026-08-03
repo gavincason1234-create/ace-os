@@ -1,13 +1,20 @@
+# Python
 __pycache__/
 *.pyc
 *.egg-info/
-build/
-dist/
+
+# Build outputs (anchored to the repo root so they cannot swallow
+# paths like config/includes.chroot/usr/local/bin)
+/build/
+/dist/
+/.build/
+/cache/
+/chroot/
+/binary/
+/local/
+/build.log
 *.iso
 *.iso.download
-build.log
-.build/
-cache/
-chroot/
-binary/
-local/
+
+# stale local wheel build tree
+installer/build/
