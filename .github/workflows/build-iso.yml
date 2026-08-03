@@ -36,9 +36,31 @@ jobs:
             -DGGML_SSE42=ON \
             -DLLAMA_CURL=OFF -DBUILD_SHARED_LIBS=OFF \
             -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_SERVER=OFF
-          cmake --build /tmp/llama.cpp/build --target llama-cli -j"$(nproc)"
+          # Upstream renames/moves the CLI target between releases, so build
+          # everything and then find the binary rather than guessing a name.
+          echo "--- available targets ---"
+          cmake --build /tmp/llama.cpp/build --target help 2>/dev/null \
+            | sed 's/^\.\.\. //' | grep -i llama || true
+          echo "-------------------------"
+          cmake --build /tmp/llama.cpp/build -j"$(nproc)"
+
+          bin=""
+          for name in llama-cli llama-app main llama; do
+            found=$(find /tmp/llama.cpp/build -type f -name "$name" -perm -u+x \
+                    -not -name '*.o' | head -1)
+            if [ -n "$found" ]; then bin="$found"; break; fi
+          done
+          if [ -z "$bin" ]; then
+            echo "::error::no llama.cpp CLI binary found after build"
+            find /tmp/llama.cpp/build -type f -perm -u+x -not -name '*.o' \
+              -not -name '*.sh' -not -name '*.cmake' | head -40
+            exit 1
+          fi
+          echo "using engine binary: $bin"
+          "$bin" --version 2>&1 | head -3 || true
+
           mkdir -p config/includes.chroot/opt/ace-ai/bin
-          cp /tmp/llama.cpp/build/bin/llama-cli config/includes.chroot/opt/ace-ai/bin/
+          cp "$bin" config/includes.chroot/opt/ace-ai/bin/llama-cli
           chmod 755 config/includes.chroot/opt/ace-ai/bin/llama-cli
 
       - name: Verify the engine contains no AVX instructions
