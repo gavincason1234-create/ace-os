@@ -1,5 +1,5 @@
 # ACE OS package selection.
-# Kept lean on purpose: the target machine has 4 GB RAM and 128 GB eMMC.
+# Kept deliberately lean: the target machine has 4 GB RAM and 128 GB eMMC.
 
 ## Desktop (XFCE — light enough for 4 GB RAM)
 task-xfce-desktop
@@ -7,6 +7,7 @@ task-laptop
 lightdm
 xfce4-power-manager
 xfce4-screenshooter
+xfce4-taskmanager
 mousepad
 ristretto
 xarchiver
@@ -16,11 +17,33 @@ thunar-archive-plugin
 calamares
 calamares-settings-debian
 
+## Dark "BlackArch" look
+greybird-gtk-theme
+papirus-icon-theme
+fonts-firacode
+
 ## Everyday apps
 firefox-esr
 vlc
 gnome-disk-utility
 gparted
+
+## Terminal stack
+htop
+tmux
+ncdu
+tree
+neovim
+git
+curl
+wget
+unzip
+ca-certificates
+
+## Local AI runtime (the llama.cpp engine is added by the build workflow)
+libgomp1
+python3
+python3-pip
 
 ## Hardware support for the ASUS L510M (Gemini Lake platform)
 firmware-linux

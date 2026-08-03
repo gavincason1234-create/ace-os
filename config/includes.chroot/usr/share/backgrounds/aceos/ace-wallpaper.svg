@@ -1,21 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0f1b2d"/>
-      <stop offset="0.55" stop-color="#16324f"/>
-      <stop offset="1" stop-color="#1d4e6b"/>
+    <radialGradient id="glow" cx="50%" cy="46%" r="62%">
+      <stop offset="0%" stop-color="#1a0407"/>
+      <stop offset="55%" stop-color="#0d0203"/>
+      <stop offset="100%" stop-color="#050505"/>
+    </radialGradient>
+    <linearGradient id="blood" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7a0d18"/>
+      <stop offset="0.5" stop-color="#e10f28"/>
+      <stop offset="1" stop-color="#7a0d18"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#4fc3f7"/>
-      <stop offset="1" stop-color="#81d4fa"/>
-    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#e10f28" stroke-width="0.5" opacity="0.05"/>
+    </pattern>
   </defs>
-  <rect width="1920" height="1080" fill="url(#bg)"/>
-  <circle cx="1650" cy="180" r="420" fill="#ffffff" opacity="0.03"/>
-  <circle cx="260" cy="920" r="360" fill="#ffffff" opacity="0.03"/>
-  <g font-family="DejaVu Sans, sans-serif" text-anchor="middle">
-    <text x="960" y="540" font-size="180" font-weight="bold" fill="url(#accent)" letter-spacing="24">ACE OS</text>
-    <text x="960" y="620" font-size="36" fill="#b0bec5" letter-spacing="10">light · fast · yours</text>
+
+  <rect width="1920" height="1080" fill="url(#glow)"/>
+  <rect width="1920" height="1080" fill="url(#grid)"/>
+
+  <!-- angular sigil -->
+  <g transform="translate(960 430)" fill="none" stroke="url(#blood)">
+    <path d="M0,-150 L130,-75 L130,75 L0,150 L-130,75 L-130,-75 Z"
+          stroke-width="2" opacity="0.85"/>
+    <path d="M0,-96 L83,-48 L83,48 L0,96 L-83,48 L-83,-48 Z"
+          stroke-width="1.2" opacity="0.5"/>
+    <path d="M0,-150 L0,150 M-130,-75 L130,75 M-130,75 L130,-75"
+          stroke-width="0.7" opacity="0.28"/>
+    <circle r="34" stroke-width="1.6" opacity="0.9"/>
+    <circle r="6" fill="#e10f28" stroke="none" opacity="0.95"/>
   </g>
-  <rect x="760" y="670" width="400" height="4" rx="2" fill="url(#accent)" opacity="0.7"/>
+
+  <g font-family="DejaVu Sans Mono, monospace" text-anchor="middle">
+    <text x="960" y="700" font-size="132" font-weight="bold"
+          fill="#f2f2f2" letter-spacing="38">ACE</text>
+    <text x="960" y="752" font-size="23" fill="#e10f28"
+          letter-spacing="13">L O C A L   I N T E L L I G E N C E</text>
+    <text x="960" y="815" font-size="17" fill="#5a5a5a" letter-spacing="4">
+      ace@aceos:~$ ai --offline --yours
+    </text>
+  </g>
+
+  <rect x="700" y="726" width="520" height="1" fill="#e10f28" opacity="0.35"/>
+  <g fill="#e10f28" opacity="0.5">
+    <rect x="60" y="60" width="46" height="2"/><rect x="60" y="60" width="2" height="46"/>
+    <rect x="1814" y="60" width="46" height="2"/><rect x="1858" y="60" width="2" height="46"/>
+    <rect x="60" y="1018" width="2" height="46"/><rect x="60" y="1018" width="46" height="2"/>
+    <rect x="1858" y="1018" width="2" height="46"/><rect x="1814" y="1018" width="46" height="2"/>
+  </g>
 </svg>

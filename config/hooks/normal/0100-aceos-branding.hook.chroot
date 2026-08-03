@@ -1,17 +1,58 @@
 #!/bin/sh
 set -e
 
-# Identify the system as ACE OS while keeping Debian compatibility fields
-# (ID/VERSION stay Debian so package tooling keeps working).
+# --- identity -------------------------------------------------------------
+# Keep ID/VERSION as Debian so apt and third-party tooling keep working.
 if [ -e /etc/os-release ]; then
     . /etc/os-release
     sed -i "s|^PRETTY_NAME=.*|PRETTY_NAME=\"ACE OS 1.0 (based on Debian ${VERSION_ID:-13})\"|" /etc/os-release
 fi
 echo "ACE OS 1.0" > /etc/aceos-release
 
-# Make the ACE OS wallpaper the default desktop background via the
-# desktop-base alternatives system used by Debian's XFCE config.
+cat > /etc/issue <<'EOF'
+
+  ACE OS 1.0  ·  local intelligence
+  \l
+
+EOF
+
+# --- executables ----------------------------------------------------------
+for tool in /usr/local/bin/ace /usr/local/bin/ace-fetch; do
+    [ -e "$tool" ] && chmod 755 "$tool"
+done
+mkdir -p /usr/share/ace/models /opt/ace-ai/bin
+[ -d /opt/ace-ai/bin ] && chmod -R a+rX /opt/ace-ai
+
+# --- desktop background ---------------------------------------------------
 if command -v update-alternatives >/dev/null 2>&1; then
     update-alternatives --install /usr/share/images/desktop-base/default \
         desktop-background /usr/share/backgrounds/aceos/ace-wallpaper.svg 100 || true
 fi
+
+# --- shell experience -----------------------------------------------------
+# Appended (not overwritten) so Debian's own .bashrc defaults survive.
+cat >> /etc/skel/.bashrc <<'EOF'
+
+# --- ACE OS ---------------------------------------------------------------
+export PS1='\[\033[38;5;88m\]┌─[\[\033[38;5;196m\]\u\[\033[38;5;88m\]@\[\033[38;5;196m\]\h\[\033[38;5;88m\]]─[\[\033[38;5;245m\]\w\[\033[38;5;88m\]]\n└─\[\033[38;5;196m\]▶\[\033[0m\] '
+alias ll='ls -alh --color=auto'
+alias la='ls -A --color=auto'
+alias ..='cd ..'
+alias sysinfo='ace-fetch'
+alias ai='ace'
+
+# Show the machine summary on the first terminal of a session.
+if [ -z "$ACE_FETCH_SHOWN" ] && [ -t 1 ]; then
+    export ACE_FETCH_SHOWN=1
+    command -v ace-fetch >/dev/null 2>&1 && ace-fetch
+fi
+EOF
+
+# --- system-wide dark default (for apps started outside the user session) --
+mkdir -p /etc/gtk-3.0
+cat > /etc/gtk-3.0/settings.ini <<'EOF'
+[Settings]
+gtk-application-prefer-dark-theme=1
+gtk-theme-name=Greybird-dark
+gtk-icon-theme-name=Papirus-Dark
+EOF

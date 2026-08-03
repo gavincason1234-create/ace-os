@@ -20,6 +20,53 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
           df -h /
 
+      # The ASUS L510M's Celeron N4020 is Goldmont Plus: SSE4.2 but NO AVX.
+      # Stock llama.cpp binaries assume AVX2 and die with "Illegal instruction"
+      # on this CPU, so the engine is compiled here with every AVX path off.
+      - name: Build local AI engine (no AVX)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake build-essential git
+          git clone --depth 1 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
+          cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_NATIVE=OFF \
+            -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_AVX512=OFF \
+            -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_BMI2=OFF \
+            -DGGML_SSE42=ON \
+            -DLLAMA_CURL=OFF -DBUILD_SHARED_LIBS=OFF \
+            -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_SERVER=OFF
+          cmake --build /tmp/llama.cpp/build --target llama-cli -j"$(nproc)"
+          mkdir -p config/includes.chroot/opt/ace-ai/bin
+          cp /tmp/llama.cpp/build/bin/llama-cli config/includes.chroot/opt/ace-ai/bin/
+          chmod 755 config/includes.chroot/opt/ace-ai/bin/llama-cli
+
+      - name: Verify the engine contains no AVX instructions
+        run: |
+          bin=config/includes.chroot/opt/ace-ai/bin/llama-cli
+          # VEX-encoded (AVX) mnemonics would crash on Goldmont Plus.
+          count=$(objdump -d "$bin" \
+                  | grep -cE '\b(vmov|vadd|vmul|vsub|vfmadd|vbroadcast|vperm|vpxor|vzero)' \
+                  || true)
+          echo "AVX-style instructions found: $count"
+          if [ "$count" -ne 0 ]; then
+            echo "::error::engine contains AVX instructions — it would crash on the N4020"
+            exit 1
+          fi
+          ldd "$bin" || true
+
+      - name: Smoke-test the engine against a real model
+        run: |
+          mkdir -p /tmp/aitest
+          curl -fL --retry 3 -o /tmp/aitest/model.gguf \
+            https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
+          sudo mkdir -p /opt/ace-ai/bin "$HOME/.local/share/ace/models"
+          sudo cp config/includes.chroot/opt/ace-ai/bin/llama-cli /opt/ace-ai/bin/
+          cp /tmp/aitest/model.gguf "$HOME/.local/share/ace/models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+          mkdir -p "$HOME/.config/ace"
+          echo '{"model":"0.5b"}' > "$HOME/.config/ace/config.json"
+          python3 config/includes.chroot/usr/local/bin/ace --selftest
+
       - name: Build ISO
         run: ./build.sh
 
@@ -34,6 +81,7 @@ jobs:
           # Stable asset names so the ace-os downloader and pip URL never change.
           mv "$iso" ace-os-amd64.iso
           mkdir -p release
+          echo "ISO size: $(stat -c%s ace-os-amd64.iso) bytes"
           # SHA256SUMS doubles as the downloader's manifest: it lists the full
           # ISO and, when split, every part.
           sha256sum ace-os-amd64.iso > release/SHA256SUMS
@@ -58,7 +106,7 @@ jobs:
         run: |
           gh release create latest \
             --title "ACE OS (latest build)" \
-            --notes "Automated build. Get it onto a USB stick with: pip install aceos-installer wheel below, then run: ace-os" \
+            --notes "Automated build. See START-HERE.md for install steps." \
             || true
           gh release upload latest release/* --clobber
 

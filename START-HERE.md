@@ -27,6 +27,19 @@ On that page, click the first file that ends in **.exe** (like `rufus-4.9.exe`).
 
 **3.** Open your **Downloads** folder. Double-click **rufus**. Click **Yes** if asked.
 
+> ### ⚠️ Drive not showing in Rufus? Read this — it's a checkbox.
+>
+> Rufus **hides big drives on purpose** (anything over ~64 GB is treated as a
+> "USB Hard Drive" so people don't wipe their backup disks by accident).
+> A 128 GB stick will be invisible until you turn that off:
+>
+> 1. In the middle of the Rufus window, click the small words
+>    **"Show advanced drive properties"**
+> 2. Tick the box **"List USB Hard Drives"**
+> 3. Your drive appears in the top box. ✔
+>
+> Still nothing? Close Rufus, unplug/replug the drive, reopen Rufus.
+
 **4.** The top box in Rufus should show your **blue drive**. ✔
 
 **5.** Click **SELECT** → pick the file **ace-os-amd64** → click Open.
@@ -79,6 +92,35 @@ drive** when the screen goes dark.
 
 The laptop starts up as an ACE OS Linux computer. Connect to Wi-Fi with the
 icon in the top corner, and you're done.
+
+---
+
+## 🧠 Turn on the AI (after it's installed)
+
+ACE OS has its own AI that runs **on the laptop itself** — no account, no
+subscription, and after the one-time download it works with the internet off.
+
+**19.** Connect to Wi-Fi.
+
+**20.** Open **ACE AI** from the applications menu (or open a terminal and
+type `ace`).
+
+**21.** Type `/setup` and press Enter. It downloads the AI brain
+(about 1.1 GB, one time only). Then just talk to it.
+
+Useful things to type inside ACE:
+
+| Type this | What it does |
+| --- | --- |
+| *(anything)* | Ask the AI a question |
+| `/sys` | Memory, CPU, disk, uptime |
+| `/model 0.5b` | Switch to the smaller, faster brain |
+| `/help` | All commands |
+| `/exit` | Quit |
+
+**Speed check, honestly:** this laptop's processor is modest, so the AI
+replies at a few words per second. Great for questions, explanations, and
+writing help — not for huge documents.
 
 **Something looks different than these steps?** Stop, take a photo of the
 screen, and ask for help — don't guess.

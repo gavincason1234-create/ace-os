@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=ACE AI
+GenericName=Local AI assistant
+Comment=Chat with the AI that runs on this laptop — no internet, no account
+Exec=xfce4-terminal --title="ACE AI" --command="/usr/local/bin/ace"
+Icon=utilities-terminal
+Terminal=false
+Categories=Utility;Development;Science;
+Keywords=ai;assistant;chat;llm;offline;local;
+StartupNotify=true
