@@ -80,7 +80,10 @@ python3
 python3-pip
 
 ## Hardware support for the ASUS L510M (Gemini Lake platform)
-firmware-linux
+# firmware-misc-nonfree rather than firmware-linux: the latter drags in the
+# AMD and NVIDIA GPU blobs, hundreds of megabytes this Intel-only machine
+# can never use. Everything the L510M actually needs is listed explicitly.
+firmware-misc-nonfree
 firmware-iwlwifi
 firmware-realtek
 firmware-atheros
