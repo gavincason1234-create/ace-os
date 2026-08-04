@@ -8,13 +8,19 @@ set -e
 #   - Intel UHD 600 graphics, Intel wireless
 #
 # Base: Debian 13 "trixie" (stable), XFCE desktop, Calamares installer.
+#
+# firmware-chroot/binary are deliberately off. Left on, live-build installs
+# every firmware package in the archive — AMD, NVIDIA, Qualcomm, MediaTek and
+# the rest — several hundred megabytes this Intel-only laptop can never load,
+# and it does so regardless of the package list. The firmware the L510M
+# actually uses is named explicitly in config/package-lists instead.
 
 lb config noauto \
     --distribution trixie \
     --architectures amd64 \
     --archive-areas "main contrib non-free non-free-firmware" \
-    --firmware-chroot true \
-    --firmware-binary true \
+    --firmware-chroot false \
+    --firmware-binary false \
     --bootappend-live "boot=live components hostname=aceos username=ace" \
     --iso-application "ACE OS" \
     --iso-volume "ACEOS" \
