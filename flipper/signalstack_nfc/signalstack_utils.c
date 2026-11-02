@@ -42,6 +42,7 @@ const char* signalstack_proto_name(TagProtocol p) {
     case TagProtoMifareClassic:return "MIFARE Classic";
     case TagProtoMifareUltralight: return "MF Ultralight";
     case TagProtoDESFire:      return "MIFARE DESFire";
+    case TagProtoISO18000_6C:  return "UHF EPC Gen2";
     default:                   return "Unknown";
     }
 }
@@ -60,6 +61,8 @@ const char* signalstack_proto_description(TagProtocol p) {
         return "HF 13.56 MHz DESFire.\nAES/DES high security.\nCorporate access, gov ID.";
     case TagProtoFeliCa:
         return "HF 13.56 MHz NFC-F.\nJapanese transit (Suica),\nOctopus, Sony FeliCa.";
+    case TagProtoISO18000_6C:
+        return "UHF 860-960 MHz EPC Gen2.\nRetail inventory, supply chain.\nISO 18000-6C / RAIN RFID.";
     default:
         return "13.56 MHz HF RFID tag.";
     }

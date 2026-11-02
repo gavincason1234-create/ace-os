@@ -38,6 +38,7 @@ typedef enum {
     SignalStackSceneHistoryDetail,
     SignalStackSceneSettings,
     SignalStackSceneAbout,
+    SignalStackSceneUhfBridge,
     SignalStackSceneCount,
 } SignalStackScene;
 
@@ -50,6 +51,7 @@ typedef enum {
     SignalStackViewHistory,
     SignalStackViewTextBox,
     SignalStackViewVarList,
+    SignalStackViewUhf,
     SignalStackViewCount,
 } SignalStackView;
 
@@ -73,6 +75,7 @@ typedef enum {
     TagProtoMifareClassic,
     TagProtoMifareUltralight,
     TagProtoDESFire,
+    TagProtoISO18000_6C,   // UHF EPC Gen2 (via bridge)
     TagProtoCount,
 } TagProtocol;
 
@@ -113,6 +116,10 @@ typedef struct {
     NfcPoller*         poller;
     FuriTimer*         scan_timer;
     void*              scan_timer_ctx;
+
+    // UHF bridge (USART1 GPIO serial)
+    View*              uhf_view;
+    void*              uhf_ctx;   // UhfCtx*, allocated per-scene
 
     // Storage
     Storage*           storage;

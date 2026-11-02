@@ -7,6 +7,7 @@ typedef enum {
     MainMenuHistory,
     MainMenuSettings,
     MainMenuAbout,
+    MainMenuUhfBridge,
 } MainMenuItem;
 
 static void main_menu_callback(void* ctx, uint32_t index) {
@@ -20,10 +21,11 @@ void signalstack_scene_main_menu_on_enter(void* ctx) {
     submenu_reset(app->submenu);
     submenu_set_header(app->submenu, "SignalStack NFC");
 
-    submenu_add_item(app->submenu, "  Scan Tags",    MainMenuScan,     main_menu_callback, app);
-    submenu_add_item(app->submenu, "  History",      MainMenuHistory,  main_menu_callback, app);
-    submenu_add_item(app->submenu, "  Settings",     MainMenuSettings, main_menu_callback, app);
-    submenu_add_item(app->submenu, "  About",        MainMenuAbout,    main_menu_callback, app);
+    submenu_add_item(app->submenu, "  Scan HF Tags",  MainMenuScan,      main_menu_callback, app);
+    submenu_add_item(app->submenu, "  UHF Bridge",   MainMenuUhfBridge, main_menu_callback, app);
+    submenu_add_item(app->submenu, "  History",      MainMenuHistory,   main_menu_callback, app);
+    submenu_add_item(app->submenu, "  Settings",     MainMenuSettings,  main_menu_callback, app);
+    submenu_add_item(app->submenu, "  About",        MainMenuAbout,     main_menu_callback, app);
 
     uint32_t selected = scene_manager_get_scene_state(
         app->scene_manager, SignalStackSceneMainMenu);
@@ -56,6 +58,11 @@ bool signalstack_scene_main_menu_on_event(void* ctx, SceneManagerEvent event) {
         case MainMenuAbout:
             scene_manager_set_scene_state(app->scene_manager, SignalStackSceneMainMenu, MainMenuAbout);
             scene_manager_next_scene(app->scene_manager, SignalStackSceneAbout);
+            consumed = true;
+            break;
+        case MainMenuUhfBridge:
+            scene_manager_set_scene_state(app->scene_manager, SignalStackSceneMainMenu, MainMenuUhfBridge);
+            scene_manager_next_scene(app->scene_manager, SignalStackSceneUhfBridge);
             consumed = true;
             break;
         default:

@@ -11,6 +11,7 @@ static void (*const ss_on_enter[SignalStackSceneCount])(void*) = {
     signalstack_scene_history_detail_on_enter,
     signalstack_scene_settings_on_enter,
     signalstack_scene_about_on_enter,
+    signalstack_scene_uhf_on_enter,
 };
 
 static bool (*const ss_on_event[SignalStackSceneCount])(void*, SceneManagerEvent) = {
@@ -22,6 +23,7 @@ static bool (*const ss_on_event[SignalStackSceneCount])(void*, SceneManagerEvent
     signalstack_scene_history_detail_on_event,
     signalstack_scene_settings_on_event,
     signalstack_scene_about_on_event,
+    signalstack_scene_uhf_on_event,
 };
 
 static void (*const ss_on_exit[SignalStackSceneCount])(void*) = {
@@ -33,6 +35,7 @@ static void (*const ss_on_exit[SignalStackSceneCount])(void*) = {
     signalstack_scene_history_detail_on_exit,
     signalstack_scene_settings_on_exit,
     signalstack_scene_about_on_exit,
+    signalstack_scene_uhf_on_exit,
 };
 
 const SceneManagerHandlers signalstack_scene_handlers = {

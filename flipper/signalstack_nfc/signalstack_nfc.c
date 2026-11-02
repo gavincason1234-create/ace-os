@@ -75,6 +75,13 @@ SignalStackApp* signalstack_app_alloc(void) {
     view_dispatcher_add_view(app->view_dispatcher, SignalStackViewVarList,
         variable_item_list_get_view(app->var_list));
 
+    app->uhf_view = view_alloc();
+    view_set_context(app->uhf_view, app);
+    view_set_draw_callback(app->uhf_view, uhf_view_draw);
+    view_set_input_callback(app->uhf_view, uhf_view_input);
+    view_allocate_model(app->uhf_view, ViewModelTypeLocking, sizeof(ScanViewModel));
+    view_dispatcher_add_view(app->view_dispatcher, SignalStackViewUhf, app->uhf_view);
+
     // Load history from log
     signalstack_load_history_from_log(app);
 
@@ -96,6 +103,7 @@ void signalstack_app_free(SignalStackApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, SignalStackViewResult);
     view_dispatcher_remove_view(app->view_dispatcher, SignalStackViewTextBox);
     view_dispatcher_remove_view(app->view_dispatcher, SignalStackViewVarList);
+    view_dispatcher_remove_view(app->view_dispatcher, SignalStackViewUhf);
 
     widget_free(app->widget_splash);
     submenu_free(app->submenu);
@@ -103,6 +111,7 @@ void signalstack_app_free(SignalStackApp* app) {
     widget_free(app->widget_result);
     text_box_free(app->text_box);
     variable_item_list_free(app->var_list);
+    view_free(app->uhf_view);
 
     scene_manager_free(app->scene_manager);
     view_dispatcher_free(app->view_dispatcher);
