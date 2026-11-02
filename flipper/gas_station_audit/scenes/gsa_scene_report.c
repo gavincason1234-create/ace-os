@@ -14,7 +14,7 @@ typedef struct {
 static FuriTimer* report_anim_timer = NULL;
 static void report_anim_cb(void* ctx) {
     GasStationAuditApp* app = ctx;
-    with_view_model(app->report_view, ReportViewModel*, m, {
+    with_view_model(app->report_view, ReportViewModel* m, {
         m->tick++;
     }, true);
 }
@@ -114,7 +114,7 @@ void gsa_scene_report_on_enter(void* ctx) {
 
     if(!app->report_ready) gsa_build_report(app);
 
-    with_view_model(app->report_view, ReportViewModel*, m, {
+    with_view_model(app->report_view, ReportViewModel* m, {
         m->tick     = 0;
         m->has_data = app->report_ready;
         m->grade    = app->report.pump_grade;

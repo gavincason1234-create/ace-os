@@ -30,7 +30,7 @@ static void bt_timer_cb(void* ctx) {
     // and gap_scan callbacks. For now populate with detected GAP scan results.
     // The actual BT classic/BLE scan API on Flipper is via furi_hal_bt_extra_beacon
     // or the unofficial BLE scan path in gap.c. We update the view model:
-    with_view_model(app->bt_view, BtViewModel*, m, {
+    with_view_model(app->bt_view, BtViewModel* m, {
         m->tick     = (uint8_t)(app->scan_tick & 0xFF);
         m->count    = app->bt_count;
         m->flagged  = app->bt_flagged;
@@ -185,7 +185,7 @@ void gsa_scene_bt_scan_on_enter(void* ctx) {
     bt_scan_populate(app);
 
     // Init view model
-    with_view_model(app->bt_view, BtViewModel*, m, {
+    with_view_model(app->bt_view, BtViewModel* m, {
         memset(m, 0, sizeof(BtViewModel));
         m->scanning = true;
     }, false);
@@ -196,8 +196,7 @@ void gsa_scene_bt_scan_on_enter(void* ctx) {
 
     view_dispatcher_switch_to_view(app->view_dispatcher, GsaViewBt);
 
-    // Enable BLE if not already on
-    if(!furi_hal_bt_is_active()) furi_hal_bt_reinit();
+    // BT is managed by Momentum firmware; scanning happens via timer
 }
 
 bool gsa_scene_bt_scan_on_event(void* ctx, SceneManagerEvent ev) {

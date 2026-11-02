@@ -77,7 +77,7 @@ bool gsa_checklist_view_input(InputEvent* ev, void* ctx) {
     GasStationAuditApp* app = ctx;
     if(ev->type != InputTypeShort) return false;
 
-    with_view_model(app->report_view, ChecklistViewModel*, m, {
+    with_view_model(app->report_view, ChecklistViewModel* m, {
         if(ev->key == InputKeyDown)
             m->scroll = (m->scroll + 1) % GSA_CHECKLIST_COUNT;
         if(ev->key == InputKeyUp)
@@ -114,7 +114,7 @@ bool gsa_checklist_view_input(InputEvent* ev, void* ctx) {
 // ── Scene wrappers ────────────────────────────────────────────────────────────
 void gsa_scene_checklist_on_enter(void* ctx) {
     GasStationAuditApp* app = ctx;
-    with_view_model(app->report_view, ChecklistViewModel*, m, {
+    with_view_model(app->report_view, ChecklistViewModel* m, {
         memset(m, 0, sizeof(ChecklistViewModel));
         snprintf(m->station_id, sizeof(m->station_id), "STATION-01");
     }, false);

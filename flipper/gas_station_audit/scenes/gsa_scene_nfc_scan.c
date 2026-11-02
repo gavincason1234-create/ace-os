@@ -16,35 +16,31 @@ typedef struct {
 } NfcViewModel;
 
 // ── NFC poller callback ───────────────────────────────────────────────────────
-static NfcCommand nfc_scan_callback(NfcEvent event, void* ctx) {
+static NfcCommand nfc_scan_callback(NfcGenericEvent event, void* ctx) {
     GasStationAuditApp* app = ctx;
+    furi_assert(event.protocol == NfcProtocolIso14443_3a);
 
-    if(event.type == NfcEventTypeFieldOn) {
-        with_view_model(app->nfc_view, NfcViewModel*, m, {
-            m->scanning = true;
-            m->pulse    = (m->pulse + 1) & 0x0F;
-        }, true);
-    }
+    Iso14443_3aPollerEvent* iso_event = (Iso14443_3aPollerEvent*)event.event_data;
 
-    if(event.type == NfcEventTypePollerReady) {
-        // We get here when a tag is detected — read base poller data
-        // Check protocol from the poller type
+    if(iso_event->type == Iso14443_3aPollerEventTypeReady) {
         if(app->nfc_count < GSA_MAX_NFC_SCANS) {
             GsaNfcResult* r = &app->nfc_results[app->nfc_count];
             memset(r, 0, sizeof(GsaNfcResult));
 
-            // Try ISO 14443-3A (most contactless payment + fleet cards)
             const Iso14443_3aData* a_data =
-                (const Iso14443_3aData*)nfc_poller_get_data(app->nfc_poller);
+                (const Iso14443_3aData*)nfc_poller_get_data(event.instance);
             if(a_data) {
-                r->proto   = GsaNfcProtoISO14443A;
-                r->uid_len = iso14443_3a_get_uid(a_data, r->uid, GSA_UID_MAX_LEN);
+                r->proto = GsaNfcProtoISO14443A;
+
+                // iso14443_3a_get_uid returns ptr, outputs length via pointer
+                size_t uid_sz = 0;
+                const uint8_t* uid_ptr = iso14443_3a_get_uid(a_data, &uid_sz);
+                r->uid_len = (uint8_t)(uid_sz > GSA_UID_MAX_LEN ? GSA_UID_MAX_LEN : uid_sz);
+                if(uid_ptr) memcpy(r->uid, uid_ptr, r->uid_len);
                 gsa_uid_to_str(r->uid, r->uid_len, r->uid_str);
 
                 uint8_t sak = iso14443_3a_get_sak(a_data);
-                // Classify card type from SAK
                 if(sak == 0x00) {
-                    // MIFARE Ultralight / NTAG — no crypto
                     snprintf(r->info, sizeof(r->info),
                         "MIFARE Ultralight/NTAG\nNo encryption. UID cloneable.");
                     r->cloneable = true;
@@ -72,7 +68,7 @@ static NfcCommand nfc_scan_callback(NfcEvent event, void* ctx) {
 
                 app->nfc_count++;
 
-                with_view_model(app->nfc_view, NfcViewModel*, m, {
+                with_view_model(app->nfc_view, NfcViewModel* m, {
                     m->found = true;
                     m->scanning = false;
                     strncpy(m->proto, "ISO14443-A", 15);
@@ -85,7 +81,6 @@ static NfcCommand nfc_scan_callback(NfcEvent event, void* ctx) {
                 notification_message(app->notifications,
                     r->cloneable ? &sequence_error : &sequence_success);
 
-                // Save to encrypted log
                 char line[GSA_LOG_LINE_MAX];
                 char ts[24]; gsa_get_timestamp(ts);
                 snprintf(line, sizeof(line),
@@ -95,13 +90,6 @@ static NfcCommand nfc_scan_callback(NfcEvent event, void* ctx) {
                 gsa_write_encrypted_record(app->storage, line);
             }
         }
-        return NfcCommandContinue;
-    }
-
-    if(event.type == NfcEventTypeFieldOff) {
-        with_view_model(app->nfc_view, NfcViewModel*, m, {
-            m->scanning = false;
-        }, true);
     }
 
     return NfcCommandContinue;
@@ -113,7 +101,6 @@ void gsa_nfc_view_draw(Canvas* canvas, void* model) {
     canvas_clear(canvas);
     canvas_set_color(canvas, ColorBlack);
 
-    // Header
     canvas_draw_rbox(canvas, 0, 0, 128, 12, 2);
     canvas_set_color(canvas, ColorWhite);
     canvas_set_font(canvas, FontSecondary);
@@ -121,11 +108,9 @@ void gsa_nfc_view_draw(Canvas* canvas, void* model) {
     canvas_set_color(canvas, ColorBlack);
 
     if(!m->found) {
-        // Pulsing NFC ring animation
         canvas_set_font(canvas, FontPrimary);
         canvas_draw_str_aligned(canvas, 64, 25, AlignCenter, AlignTop, "HOLD CARD NEAR");
         canvas_draw_str_aligned(canvas, 64, 36, AlignCenter, AlignTop, "FLIPPER...");
-        // Concentric circles animate with pulse
         uint8_t p = m->pulse;
         canvas_draw_circle(canvas, 64, 48, 4 + (p % 8));
         canvas_draw_circle(canvas, 64, 48, 8 + (p % 8));
@@ -136,10 +121,8 @@ void gsa_nfc_view_draw(Canvas* canvas, void* model) {
         return;
     }
 
-    // Found — show card details
     canvas_set_font(canvas, FontSecondary);
 
-    // Grade box — top right
     char grade_str[8];
     snprintf(grade_str, sizeof(grade_str), " %s ", m->grade);
     if(m->cloneable) {
@@ -154,7 +137,6 @@ void gsa_nfc_view_draw(Canvas* canvas, void* model) {
     canvas_draw_str(canvas, 2, 22, m->proto);
     canvas_draw_str(canvas, 2, 31, m->uid);
 
-    // Info (first line only — space limited)
     char first_line[42] = {0};
     const char* nl = strchr(m->info, '\n');
     size_t fl = nl ? (size_t)(nl - m->info) : strlen(m->info);
@@ -178,8 +160,7 @@ bool gsa_nfc_view_input(InputEvent* ev, void* ctx) {
     GasStationAuditApp* app = ctx;
     if(ev->type == InputTypeShort) {
         if(ev->key == InputKeyOk) {
-            // Reset found state for next card
-            with_view_model(app->nfc_view, NfcViewModel*, m, {
+            with_view_model(app->nfc_view, NfcViewModel* m, {
                 m->found = false; m->scanning = true;
             }, true);
             return true;
@@ -196,7 +177,7 @@ bool gsa_nfc_view_input(InputEvent* ev, void* ctx) {
 static FuriTimer* nfc_anim_timer = NULL;
 static void nfc_anim_cb(void* ctx) {
     GasStationAuditApp* app = ctx;
-    with_view_model(app->nfc_view, NfcViewModel*, m, {
+    with_view_model(app->nfc_view, NfcViewModel* m, {
         m->pulse = (m->pulse + 1) & 0x0F;
         m->tick++;
     }, true);
@@ -206,16 +187,14 @@ void gsa_scene_nfc_scan_on_enter(void* ctx) {
     GasStationAuditApp* app = ctx;
     app->nfc_scanning = true;
 
-    with_view_model(app->nfc_view, NfcViewModel*, m, {
+    with_view_model(app->nfc_view, NfcViewModel* m, {
         memset(m, 0, sizeof(NfcViewModel));
         m->scanning = true;
     }, false);
 
-    // Start ISO 14443-3A poller
     app->nfc_poller = nfc_poller_alloc(app->nfc, NfcProtocolIso14443_3a);
     nfc_poller_start(app->nfc_poller, nfc_scan_callback, app);
 
-    // Animation timer
     nfc_anim_timer = furi_timer_alloc(nfc_anim_cb, FuriTimerTypePeriodic, app);
     furi_timer_start(nfc_anim_timer, 150);
 

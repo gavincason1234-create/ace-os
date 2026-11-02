@@ -46,28 +46,28 @@ GasStationAuditApp* gsa_app_alloc(void) {
     view_set_context(app->bt_view, app);
     view_set_draw_callback(app->bt_view, gsa_bt_view_draw);
     view_set_input_callback(app->bt_view, gsa_bt_view_input);
-    view_allocate_model(app->bt_view, ViewModelTypeLocking, sizeof(uint8_t));
+    view_allocate_model(app->bt_view, ViewModelTypeLocking, 512);
     view_dispatcher_add_view(app->view_dispatcher, GsaViewBt, app->bt_view);
 
     app->nfc_view = view_alloc();
     view_set_context(app->nfc_view, app);
     view_set_draw_callback(app->nfc_view, gsa_nfc_view_draw);
     view_set_input_callback(app->nfc_view, gsa_nfc_view_input);
-    view_allocate_model(app->nfc_view, ViewModelTypeLocking, sizeof(uint8_t));
+    view_allocate_model(app->nfc_view, ViewModelTypeLocking, 256);
     view_dispatcher_add_view(app->view_dispatcher, GsaViewNfc, app->nfc_view);
 
     app->rf_view = view_alloc();
     view_set_context(app->rf_view, app);
     view_set_draw_callback(app->rf_view, gsa_rf_view_draw);
     view_set_input_callback(app->rf_view, gsa_rf_view_input);
-    view_allocate_model(app->rf_view, ViewModelTypeLocking, sizeof(uint8_t));
+    view_allocate_model(app->rf_view, ViewModelTypeLocking, 256);
     view_dispatcher_add_view(app->view_dispatcher, GsaViewRf, app->rf_view);
 
     app->report_view = view_alloc();
     view_set_context(app->report_view, app);
     view_set_draw_callback(app->report_view, gsa_report_view_draw);
     view_set_input_callback(app->report_view, gsa_report_view_input);
-    view_allocate_model(app->report_view, ViewModelTypeLocking, sizeof(uint8_t));
+    view_allocate_model(app->report_view, ViewModelTypeLocking, 512);
     view_dispatcher_add_view(app->view_dispatcher, GsaViewReport, app->report_view);
 
     app->text_box = text_box_alloc();

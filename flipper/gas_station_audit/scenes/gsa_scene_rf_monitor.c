@@ -42,7 +42,7 @@ static void rf_timer_cb(void* ctx) {
     // furi_hal_subghz_get_rssi() returns current RSSI in dBm
     int8_t rssi = furi_hal_subghz_get_rssi();
 
-    with_view_model(app->rf_view, RfViewModel*, m, {
+    with_view_model(app->rf_view, RfViewModel* m, {
         m->tick++;
         m->rssi_bars[m->sweep_idx] = rssi;
 
@@ -173,14 +173,14 @@ void gsa_scene_rf_monitor_on_enter(void* ctx) {
     app->rf_monitoring  = true;
     app->scan_tick      = 0;
 
-    with_view_model(app->rf_view, RfViewModel*, m, {
+    with_view_model(app->rf_view, RfViewModel* m, {
         memset(m, 0, sizeof(RfViewModel));
         m->monitoring = true;
     }, false);
 
     // Init CC1101 Sub-GHz
     furi_hal_subghz_reset();
-    furi_hal_subghz_load_custom_preset(FuriHalSubGhzPresetOok650Async);
+    furi_hal_subghz_load_preset(FuriHalSubGhzPresetOok650Async);
     furi_hal_subghz_set_frequency_and_path(GSA_PUMP_FREQS[0]);
     furi_hal_subghz_rx();
 

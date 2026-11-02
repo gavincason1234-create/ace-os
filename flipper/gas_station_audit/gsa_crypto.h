@@ -38,8 +38,7 @@ static inline void gsa_cipher_crypt(GsaCipherCtx* ctx, const uint8_t* in, uint8_
 static inline void gsa_derive_key(uint8_t* key_out) {
     // Flipper UID lives in OTP flash — 8 bytes at a known address
     // We mix it with a static salt so the key is device-bound
-    uint8_t uid[8];
-    furi_hal_version_uid(uid);  // fills uid[0..7]
+    const uint8_t* uid = furi_hal_version_uid();  // returns ptr to 8-byte device UID
     const uint8_t salt[8] = {0xA3, 0x7F, 0x2C, 0x91, 0xE5, 0x4D, 0xB8, 0x06};
     for(int i = 0; i < 8; i++) {
         key_out[i]     = uid[i] ^ salt[i];
