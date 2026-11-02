@@ -123,6 +123,8 @@ typedef enum {
     GsaSceneRfMonitor,
     GsaSceneReport,
     GsaSceneLog,
+    GsaScenePriceSign,
+    GsaSceneChecklist,
     GsaSceneCount,
 } GsaScene;
 
@@ -230,6 +232,19 @@ void gsa_scene_report_on_exit(void* ctx);
 void gsa_scene_log_on_enter(void* ctx);
 bool gsa_scene_log_on_event(void* ctx, SceneManagerEvent ev);
 void gsa_scene_log_on_exit(void* ctx);
+
+void gsa_scene_price_sign_on_enter(void* ctx);
+bool gsa_scene_price_sign_on_event(void* ctx, SceneManagerEvent ev);
+void gsa_scene_price_sign_on_exit(void* ctx);
+
+void gsa_scene_checklist_on_enter(void* ctx);
+bool gsa_scene_checklist_on_event(void* ctx, SceneManagerEvent ev);
+void gsa_scene_checklist_on_exit(void* ctx);
+
+void gsa_price_sign_view_draw(Canvas* canvas, void* model);
+bool gsa_price_sign_view_input(InputEvent* ev, void* ctx);
+void gsa_checklist_view_draw(Canvas* canvas, void* model);
+bool gsa_checklist_view_input(InputEvent* ev, void* ctx);
 
 // ── View draw/input ───────────────────────────────────────────────────────────
 void gsa_bt_view_draw(Canvas* canvas, void* model);
