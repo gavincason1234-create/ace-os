@@ -46,6 +46,16 @@ typedef struct {
     char     finding[128];
 } PriceSignViewModel;
 
+// CC1101 OOK 650kHz async preset — addr/val pairs, 0x00 0x00 terminated
+static const uint8_t gsa_ook650_preset[] = {
+    0x02, 0x0D,  0x08, 0x32,  0x0B, 0x06,
+    0x10, 0x67,  0x11, 0x32,  0x12, 0x30,
+    0x13, 0x00,  0x14, 0x00,  0x17, 0x00,
+    0x18, 0x18,  0x19, 0x16,  0x1B, 0x07,
+    0x1C, 0x00,  0x1D, 0x91,  0x20, 0xFB,
+    0x21, 0xB6,  0x22, 0x11,  0x00, 0x00,
+};
+
 static uint32_t* capture_buf = NULL;
 static uint32_t  capture_len = 0;
 static uint32_t  tx_idx      = 0;
@@ -60,17 +70,18 @@ static void subghz_rx_callback(bool level, uint32_t duration, void* ctx) {
 }
 
 // ── TX replay callback — feeds captured durations back to CC1101 ──────────────
-static bool tx_replay_callback(uint32_t* duration, bool* level, void* ctx) {
+// FuriHalSubGhzAsyncTxCallback: void(*)(uint32_t* duration, bool* level, void*)
+// Signal done by setting *duration = 0.
+static void tx_replay_callback(uint32_t* duration, bool* level, void* ctx) {
     UNUSED(ctx);
     if(tx_idx >= capture_len) {
         *duration = 0;
         *level    = false;
-        return false;  // done
+        return;
     }
     uint32_t sample = capture_buf[tx_idx++];
     *level    = (sample >> 31) & 1;
     *duration = sample & 0x7FFFFFFF;
-    return true;
 }
 
 // ── Decode helper ─────────────────────────────────────────────────────────────
@@ -212,7 +223,7 @@ bool gsa_price_sign_view_input(InputEvent* ev, void* ctx) {
                 m->capture_active = true;
 
                 furi_hal_subghz_reset();
-                furi_hal_subghz_load_preset(FuriHalSubGhzPresetOok650Async);
+                furi_hal_subghz_load_custom_preset(gsa_ook650_preset);
                 furi_hal_subghz_set_frequency_and_path(m->capture_freq);
                 furi_hal_subghz_start_async_rx(subghz_rx_callback, app);
             }
@@ -240,7 +251,7 @@ bool gsa_price_sign_view_input(InputEvent* ev, void* ctx) {
                 if(capture_buf && capture_len > 0) {
                     tx_idx = 0;
                     furi_hal_subghz_reset();
-                    furi_hal_subghz_load_preset(FuriHalSubGhzPresetOok650Async);
+                    furi_hal_subghz_load_custom_preset(gsa_ook650_preset);
                     furi_hal_subghz_set_frequency_and_path(m->capture_freq);
                     furi_hal_subghz_start_async_tx(tx_replay_callback, NULL);
                     furi_delay_ms(600);
@@ -255,6 +266,10 @@ bool gsa_price_sign_view_input(InputEvent* ev, void* ctx) {
                 capture_len = 0;
                 m->state = PriceSignStateIdle;
             }
+            break;
+
+        case PriceSignStateReplay:
+            // TX in progress — no input handled
             break;
 
         case PriceSignStateReplayDone:

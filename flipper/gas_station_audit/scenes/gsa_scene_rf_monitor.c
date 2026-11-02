@@ -3,7 +3,18 @@
 #include "../gas_station_audit.h"
 #include "../gsa_storage.h"
 
-// Gas pump Sub-GHz frequencies to sweep (MHz * 100 for integer math)
+// CC1101 OOK 650kHz async preset — addr/val pairs, 0x00 0x00 terminated
+// Matches FuriHalSubGhzPresetOok650Async from firmware source
+static const uint8_t gsa_ook650_preset[] = {
+    0x02, 0x0D,  0x08, 0x32,  0x0B, 0x06,
+    0x10, 0x67,  0x11, 0x32,  0x12, 0x30,
+    0x13, 0x00,  0x14, 0x00,  0x17, 0x00,
+    0x18, 0x18,  0x19, 0x16,  0x1B, 0x07,
+    0x1C, 0x00,  0x1D, 0x91,  0x20, 0xFB,
+    0x21, 0xB6,  0x22, 0x11,  0x00, 0x00,
+};
+
+// Gas pump Sub-GHz frequencies to sweep
 // Sources: industry docs, FCC ID database for pump controller models
 static const uint32_t GSA_PUMP_FREQS[] = {
     315000000,   // 315 MHz  — North America fixed-code remotes
@@ -142,9 +153,10 @@ void gsa_rf_view_draw(Canvas* canvas, void* model) {
     // Last signal details
     if(m->signal_count > 0) {
         uint32_t lmhz = m->last_freq / 1000000;
-        snprintf(buf, sizeof(buf), "! %s @ %luMHz %ddBm",
+        char sigbuf[64];
+        snprintf(sigbuf, sizeof(sigbuf), "! %s %luM %ddBm",
             m->last_note, (unsigned long)lmhz, m->last_rssi);
-        canvas_draw_str(canvas, 2, 54, buf);
+        canvas_draw_str(canvas, 2, 54, sigbuf);
     } else {
         canvas_draw_str(canvas, 2, 54, "No active signals yet...");
     }
@@ -180,7 +192,7 @@ void gsa_scene_rf_monitor_on_enter(void* ctx) {
 
     // Init CC1101 Sub-GHz
     furi_hal_subghz_reset();
-    furi_hal_subghz_load_preset(FuriHalSubGhzPresetOok650Async);
+    furi_hal_subghz_load_custom_preset(gsa_ook650_preset);
     furi_hal_subghz_set_frequency_and_path(GSA_PUMP_FREQS[0]);
     furi_hal_subghz_rx();
 
