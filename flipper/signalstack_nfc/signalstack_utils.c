@@ -8,12 +8,11 @@
 
 // ── UID → colon-separated hex string ─────────────────────────────────────────
 void signalstack_uid_to_str(const uint8_t* uid, uint8_t len, char* out) {
-    out[0] = '\0';
-    for(uint8_t i = 0; i < len; i++) {
-        char buf[4];
-        snprintf(buf, sizeof(buf), "%02X%s", uid[i], (i < len - 1) ? ":" : "");
-        strncat(out, buf, 31 - strlen(out));
+    int pos = 0;
+    for(uint8_t i = 0; i < len && pos < 31; i++) {
+        pos += snprintf(out + pos, 32 - pos, "%s%02X", (i > 0) ? ":" : "", uid[i]);
     }
+    out[pos] = '\0';
 }
 
 // ── Timestamp ─────────────────────────────────────────────────────────────────

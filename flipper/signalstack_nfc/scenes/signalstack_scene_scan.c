@@ -4,12 +4,6 @@
 #include <nfc/protocols/iso14443_3a/iso14443_3a_poller.h>
 #include <nfc/protocols/iso15693_3/iso15693_3_poller.h>
 
-// Forward-declare data accessors — present in SDK binary but not always in public headers
-typedef struct Iso14443_3aPoller Iso14443_3aPoller;
-typedef struct Iso15693_3Poller  Iso15693_3Poller;
-const Iso14443_3aData* iso14443_3a_poller_get_data(Iso14443_3aPoller* instance);
-const Iso15693_3Data*  iso15693_3_poller_get_data(Iso15693_3Poller* instance);
-
 // ── Scan view model ───────────────────────────────────────────────────────────
 typedef struct {
     bool    found;
@@ -118,7 +112,14 @@ static NfcCommand poller_14443a_cb(NfcGenericEvent event, void* ctx) {
 
     Iso14443_3aPollerEvent* e = event.event_data;
     if(e->type == Iso14443_3aPollerEventTypeReady) {
-        const Iso14443_3aData* d = iso14443_3a_poller_get_data((Iso14443_3aPoller*)event.instance);
+        // Copy data from poller into our NfcDevice, then read it back
+        nfc_device_set_data(
+            app->nfc_device, NfcProtocolIso14443_3a,
+            nfc_poller_get_data(event.instance));
+
+        Iso14443_3aData iso_data;
+        nfc_device_copy_data(app->nfc_device, NfcProtocolIso14443_3a, &iso_data);
+        const Iso14443_3aData* d = &iso_data;
 
         SignalStackScanResult* r = &app->last_scan;
         memset(r, 0, sizeof(*r));
@@ -148,7 +149,14 @@ static NfcCommand poller_15693_cb(NfcGenericEvent event, void* ctx) {
 
     Iso15693_3PollerEvent* e = event.event_data;
     if(e->type == Iso15693_3PollerEventTypeReady) {
-        const Iso15693_3Data* d = iso15693_3_poller_get_data((Iso15693_3Poller*)event.instance);
+        // Copy data from poller into our NfcDevice, then read it back
+        nfc_device_set_data(
+            app->nfc_device, NfcProtocolIso15693_3,
+            nfc_poller_get_data(event.instance));
+
+        Iso15693_3Data iso_data;
+        nfc_device_copy_data(app->nfc_device, NfcProtocolIso15693_3, &iso_data);
+        const Iso15693_3Data* d = &iso_data;
 
         SignalStackScanResult* r = &app->last_scan;
         memset(r, 0, sizeof(*r));
