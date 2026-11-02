@@ -6,10 +6,13 @@
 #include <toolbox/stream/file_stream.h>
 #include <datetime/datetime.h>
 
-// ── UID → hex string ──────────────────────────────────────────────────────────
+// ── UID → colon-separated hex string ─────────────────────────────────────────
 void signalstack_uid_to_str(const uint8_t* uid, uint8_t len, char* out) {
+    out[0] = '\0';
     for(uint8_t i = 0; i < len; i++) {
-        snprintf(out + i * 3, 4, "%02X%s", uid[i], (i < len - 1) ? ":" : "");
+        char buf[4];
+        snprintf(buf, sizeof(buf), "%02X%s", uid[i], (i < len - 1) ? ":" : "");
+        strncat(out, buf, 31 - strlen(out));
     }
 }
 
@@ -20,47 +23,42 @@ void signalstack_get_timestamp(char* out, uint32_t* unix_out) {
     snprintf(out, 20, "%04u-%02u-%02u %02u:%02u:%02u",
         dt.year, dt.month, dt.day,
         dt.hour, dt.minute, dt.second);
-    // Rough Unix timestamp (good enough for logging)
     *unix_out = (uint32_t)dt.hour * 3600 +
                 (uint32_t)dt.minute * 60 +
                 (uint32_t)dt.second;
 }
 
-// ── Protocol name / description ───────────────────────────────────────────────
+// ── Protocol name ─────────────────────────────────────────────────────────────
 const char* signalstack_proto_name(TagProtocol p) {
     switch(p) {
-    case TagProtoISO14443A:       return "ISO14443-A";
-    case TagProtoISO14443B:       return "ISO14443-B";
-    case TagProtoISO14443_4A:     return "ISO14443-4A";
-    case TagProtoISO15693:        return "ISO15693";
-    case TagProtoFeliCa:          return "FeliCa";
-    case TagProtoMifareClassic:   return "MIFARE Classic";
-    case TagProtoMifareUltralight:return "MF Ultralight";
-    case TagProtoDESFire:         return "MIFARE DESFire";
-    default:                      return "Unknown";
+    case TagProtoISO14443A:    return "ISO14443-A";
+    case TagProtoISO14443B:    return "ISO14443-B";
+    case TagProtoISO14443_4A:  return "ISO14443-4A";
+    case TagProtoISO15693:     return "ISO15693";
+    case TagProtoFeliCa:       return "FeliCa";
+    case TagProtoMifareClassic:return "MIFARE Classic";
+    case TagProtoMifareUltralight: return "MF Ultralight";
+    case TagProtoDESFire:      return "MIFARE DESFire";
+    default:                   return "Unknown";
     }
 }
 
 const char* signalstack_proto_description(TagProtocol p) {
     switch(p) {
     case TagProtoISO14443A:
-        return "HF 13.56 MHz. Short range.\nUsed in access badges,\ncredit cards, transit.";
-    case TagProtoISO14443B:
-        return "HF 13.56 MHz. ISO B.\nUsed in passports, ID cards,\nsome bank cards.";
-    case TagProtoISO14443_4A:
-        return "HF 13.56 MHz ISO 14443-4.\nT=CL layer. Used in smart\ncards, payment systems.";
+        return "HF 13.56 MHz ISO 14443-A.\nAccess badges, bank cards,\ntransit tickets.";
     case TagProtoISO15693:
-        return "HF 13.56 MHz. Vicinity card.\nLonger range ~1m. Used in\nretail inventory, library,\nasset tracking (Jence/etc).";
-    case TagProtoFeliCa:
-        return "HF 13.56 MHz NFC-F.\nJapanese transit, Suica,\nOctopus, Sony FeliCa.";
+        return "HF 13.56 MHz Vicinity.\nLonger range ~1m. Used in\nretail inventory, library,\nasset tracking.";
     case TagProtoMifareClassic:
-        return "HF 13.56 MHz MIFARE.\nCommon office/hotel/transit.\n1K=16 sectors, 4K=32 sectors.";
+        return "HF 13.56 MHz MIFARE.\nOffice/hotel/transit cards.\n1K=16 sectors, 4K=32 sectors.";
     case TagProtoMifareUltralight:
-        return "HF 13.56 MHz MIFARE UL.\nLow cost, limited memory.\nTickets, loyalty cards.";
+        return "HF 13.56 MHz MF Ultralight.\nLow cost tickets, loyalty.";
     case TagProtoDESFire:
-        return "HF 13.56 MHz DESFire.\nHigh security AES/DES.\nCorporate access, gov ID.";
+        return "HF 13.56 MHz DESFire.\nAES/DES high security.\nCorporate access, gov ID.";
+    case TagProtoFeliCa:
+        return "HF 13.56 MHz NFC-F.\nJapanese transit (Suica),\nOctopus, Sony FeliCa.";
     default:
-        return "Unrecognised tag type.";
+        return "13.56 MHz HF RFID tag.";
     }
 }
 
@@ -68,22 +66,16 @@ const char* signalstack_proto_description(TagProtocol p) {
 void signalstack_save_to_log(SignalStackApp* app, const SignalStackScanResult* r) {
     Stream* stream = file_stream_alloc(app->storage);
     bool opened = file_stream_open(
-        stream, SIGNALSTACK_LOG_FILE,
-        FSAM_WRITE, FSOM_OPEN_APPEND);
+        stream, SIGNALSTACK_LOG_FILE, FSAM_WRITE, FSOM_OPEN_APPEND);
 
     if(opened) {
-        // Write CSV header if file is new (size == 0 after open means empty)
         if(stream_size(stream) == 0) {
             stream_write_cstring(stream,
                 "timestamp,protocol,uid,uid_len,extra\r\n");
         }
         FuriString* line = furi_string_alloc();
         furi_string_printf(line, "%s,%s,%s,%u,\"%s\"\r\n",
-            r->timestamp,
-            r->proto_name,
-            r->uid_str,
-            r->uid_len,
-            r->extra);
+            r->timestamp, r->proto_name, r->uid_str, r->uid_len, r->extra);
         stream_write_cstring(stream, furi_string_get_cstr(line));
         furi_string_free(line);
     }
@@ -92,12 +84,10 @@ void signalstack_save_to_log(SignalStackApp* app, const SignalStackScanResult* r
     stream_free(stream);
 }
 
-// ── Save raw .nfc file (Flipper format) ───────────────────────────────────────
+// ── Save raw .nfc file ────────────────────────────────────────────────────────
 void signalstack_save_nfc_file(SignalStackApp* app, const SignalStackScanResult* r) {
-    // Build filename: SD/SignalStack/nfc/<uid>.nfc
     char path[128];
     snprintf(path, sizeof(path), EXT_PATH("SignalStack/nfc/%s.nfc"), r->uid_str);
-    // Replace ':' with '-' so it's a valid filename
     for(char* c = path; *c; c++) {
         if(*c == ':') *c = '-';
     }
@@ -105,22 +95,16 @@ void signalstack_save_nfc_file(SignalStackApp* app, const SignalStackScanResult*
     Stream* stream = file_stream_alloc(app->storage);
     bool opened = file_stream_open(stream, path, FSAM_WRITE, FSOM_CREATE_ALWAYS);
     if(opened) {
-        // Minimal Flipper .nfc format header
         FuriString* s = furi_string_alloc();
         furi_string_printf(s,
             "Filetype: Flipper NFC device\r\n"
             "Version: 4\r\n"
-            "# Generated by SignalStack NFC Scanner\r\n"
+            "# SignalStack NFC Scanner\r\n"
             "# Timestamp: %s\r\n"
             "Device type: %s\r\n"
             "UID: %s\r\n"
-            "ATQA: 00 00\r\n"
-            "SAK: 00\r\n"
             "# Extra: %s\r\n",
-            r->timestamp,
-            r->proto_name,
-            r->uid_str,
-            r->extra);
+            r->timestamp, r->proto_name, r->uid_str, r->extra);
         stream_write_cstring(stream, furi_string_get_cstr(s));
         furi_string_free(s);
     }
@@ -135,8 +119,7 @@ void signalstack_load_history_from_log(SignalStackApp* app) {
 
     Stream* stream = file_stream_alloc(app->storage);
     bool opened = file_stream_open(
-        stream, SIGNALSTACK_LOG_FILE,
-        FSAM_READ, FSOM_OPEN_EXISTING);
+        stream, SIGNALSTACK_LOG_FILE, FSAM_READ, FSOM_OPEN_EXISTING);
 
     if(!opened) {
         stream_free(stream);
@@ -147,19 +130,16 @@ void signalstack_load_history_from_log(SignalStackApp* app) {
     bool first = true;
 
     while(stream_read_line(stream, line)) {
-        if(first) { first = false; continue; } // skip header
+        if(first) { first = false; continue; }
 
-        // Parse CSV: timestamp,protocol,uid,uid_len,extra
         const char* s = furi_string_get_cstr(line);
         SignalStackScanResult r = {0};
-
         char uid_len_str[8] = {0};
-        // Simple fixed-field parse (fields don't contain commas except extra in quotes)
+
         int parsed = sscanf(s, "%19[^,],%31[^,],%31[^,],%7[^,],\"%255[^\"]\"",
             r.timestamp, r.proto_name, r.uid_str, uid_len_str, r.extra);
         if(parsed >= 3) {
             r.uid_len = (uint8_t)atoi(uid_len_str);
-            // Match protocol enum from name
             for(TagProtocol p = 0; p < TagProtoCount; p++) {
                 if(strcmp(signalstack_proto_name(p), r.proto_name) == 0) {
                     r.protocol = p;

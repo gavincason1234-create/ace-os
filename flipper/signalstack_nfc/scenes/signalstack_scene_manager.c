@@ -1,24 +1,43 @@
-// Scene manager registration table
+// Scene manager registration — order MUST match SignalStackScene enum
 
 #include "signalstack_scene.h"
 
-#define ADD_SCENE(prefix, name, id) \
-    [id] = {                        \
-        .on_enter = prefix##_scene_##name##_on_enter,  \
-        .on_event = prefix##_scene_##name##_on_event,  \
-        .on_exit  = prefix##_scene_##name##_on_exit,   \
-    },
+static void (*const ss_on_enter[SignalStackSceneCount])(void*) = {
+    signalstack_scene_splash_on_enter,
+    signalstack_scene_main_menu_on_enter,
+    signalstack_scene_scan_on_enter,
+    signalstack_scene_result_on_enter,
+    signalstack_scene_history_on_enter,
+    signalstack_scene_history_detail_on_enter,
+    signalstack_scene_settings_on_enter,
+    signalstack_scene_about_on_enter,
+};
+
+static bool (*const ss_on_event[SignalStackSceneCount])(void*, SceneManagerEvent) = {
+    signalstack_scene_splash_on_event,
+    signalstack_scene_main_menu_on_event,
+    signalstack_scene_scan_on_event,
+    signalstack_scene_result_on_event,
+    signalstack_scene_history_on_event,
+    signalstack_scene_history_detail_on_event,
+    signalstack_scene_settings_on_event,
+    signalstack_scene_about_on_event,
+};
+
+static void (*const ss_on_exit[SignalStackSceneCount])(void*) = {
+    signalstack_scene_splash_on_exit,
+    signalstack_scene_main_menu_on_exit,
+    signalstack_scene_scan_on_exit,
+    signalstack_scene_result_on_exit,
+    signalstack_scene_history_on_exit,
+    signalstack_scene_history_detail_on_exit,
+    signalstack_scene_settings_on_exit,
+    signalstack_scene_about_on_exit,
+};
 
 const SceneManagerHandlers signalstack_scene_handlers = {
-    .handlers_count = SignalStackSceneCount,
-    .handlers = {
-        ADD_SCENE(signalstack, splash,         SignalStackSceneSplash)
-        ADD_SCENE(signalstack, main_menu,      SignalStackSceneMainMenu)
-        ADD_SCENE(signalstack, scan,           SignalStackSceneScan)
-        ADD_SCENE(signalstack, result,         SignalStackSceneResult)
-        ADD_SCENE(signalstack, history,        SignalStackSceneHistory)
-        ADD_SCENE(signalstack, history_detail, SignalStackSceneHistoryDetail)
-        ADD_SCENE(signalstack, settings,       SignalStackSceneSettings)
-        ADD_SCENE(signalstack, about,          SignalStackSceneAbout)
-    },
+    .on_enter_handlers = ss_on_enter,
+    .on_event_handlers = ss_on_event,
+    .on_exit_handlers  = ss_on_exit,
+    .scene_num         = SignalStackSceneCount,
 };

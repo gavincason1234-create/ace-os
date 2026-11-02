@@ -15,13 +15,7 @@
 #include <nfc/nfc_device.h>
 #include <nfc/protocols/nfc_protocol.h>
 #include <nfc/protocols/iso14443_3a/iso14443_3a.h>
-#include <nfc/protocols/iso14443_3b/iso14443_3b.h>
-#include <nfc/protocols/iso14443_4a/iso14443_4a.h>
 #include <nfc/protocols/iso15693_3/iso15693_3.h>
-#include <nfc/protocols/felica/felica.h>
-#include <nfc/protocols/mf_classic/mf_classic.h>
-#include <nfc/protocols/mf_ultralight/mf_ultralight.h>
-#include <nfc/protocols/mf_desfire/mf_desfire.h>
 #include <nfc/nfc_poller.h>
 #include <toolbox/stream/stream.h>
 #include <toolbox/stream/file_stream.h>
@@ -108,6 +102,8 @@ typedef struct {
     Nfc*               nfc;
     NfcDevice*         nfc_device;
     NfcPoller*         poller;
+    FuriTimer*         scan_timer;
+    void*              scan_timer_ctx;
 
     // Storage
     Storage*           storage;

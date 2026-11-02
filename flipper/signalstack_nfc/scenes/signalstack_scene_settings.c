@@ -29,7 +29,6 @@ static void settings_change_callback(VariableItem* item) {
 void signalstack_scene_settings_on_enter(void* ctx) {
     SignalStackApp* app = ctx;
     variable_item_list_reset(app->var_list);
-    variable_item_list_set_header(app->var_list, "Settings");
 
     VariableItem* item;
 
