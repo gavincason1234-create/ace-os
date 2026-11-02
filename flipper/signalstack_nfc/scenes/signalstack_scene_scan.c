@@ -4,15 +4,6 @@
 #include <nfc/protocols/iso14443_3a/iso14443_3a_poller.h>
 #include <nfc/protocols/iso15693_3/iso15693_3_poller.h>
 
-// ── Scan view model ───────────────────────────────────────────────────────────
-typedef struct {
-    bool    found;
-    uint8_t pulse;
-    char    proto[32];
-    char    uid[32];
-    char    extra[128];
-} ScanViewModel;
-
 // ── Draw ──────────────────────────────────────────────────────────────────────
 void signalstack_scan_view_draw(Canvas* canvas, void* model) {
     ScanViewModel* vm = model;
@@ -112,14 +103,8 @@ static NfcCommand poller_14443a_cb(NfcGenericEvent event, void* ctx) {
 
     Iso14443_3aPollerEvent* e = event.event_data;
     if(e->type == Iso14443_3aPollerEventTypeReady) {
-        // Copy data from poller into our NfcDevice, then read it back
-        nfc_device_set_data(
-            app->nfc_device, NfcProtocolIso14443_3a,
-            nfc_poller_get_data(event.instance));
-
-        Iso14443_3aData iso_data;
-        nfc_device_copy_data(app->nfc_device, NfcProtocolIso14443_3a, &iso_data);
-        const Iso14443_3aData* d = &iso_data;
+        const Iso14443_3aData* d =
+            (const Iso14443_3aData*)nfc_poller_get_data(event.instance);
 
         SignalStackScanResult* r = &app->last_scan;
         memset(r, 0, sizeof(*r));
@@ -149,14 +134,8 @@ static NfcCommand poller_15693_cb(NfcGenericEvent event, void* ctx) {
 
     Iso15693_3PollerEvent* e = event.event_data;
     if(e->type == Iso15693_3PollerEventTypeReady) {
-        // Copy data from poller into our NfcDevice, then read it back
-        nfc_device_set_data(
-            app->nfc_device, NfcProtocolIso15693_3,
-            nfc_poller_get_data(event.instance));
-
-        Iso15693_3Data iso_data;
-        nfc_device_copy_data(app->nfc_device, NfcProtocolIso15693_3, &iso_data);
-        const Iso15693_3Data* d = &iso_data;
+        const Iso15693_3Data* d =
+            (const Iso15693_3Data*)nfc_poller_get_data(event.instance);
 
         SignalStackScanResult* r = &app->last_scan;
         memset(r, 0, sizeof(*r));

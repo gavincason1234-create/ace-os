@@ -60,6 +60,7 @@ SignalStackApp* signalstack_app_alloc(void) {
     view_set_context(app->scan_view, app);
     view_set_draw_callback(app->scan_view, signalstack_scan_view_draw);
     view_set_input_callback(app->scan_view, signalstack_scan_view_input);
+    view_allocate_model(app->scan_view, ViewModelTypeLocking, sizeof(ScanViewModel));
     view_dispatcher_add_view(app->view_dispatcher, SignalStackViewScan, app->scan_view);
 
     app->widget_result = widget_alloc();

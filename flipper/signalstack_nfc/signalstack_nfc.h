@@ -53,6 +53,15 @@ typedef enum {
     SignalStackViewCount,
 } SignalStackView;
 
+// ── Scan view model (shared so signalstack_nfc.c can allocate it) ─────────────
+typedef struct {
+    bool    found;
+    uint8_t pulse;
+    char    proto[32];
+    char    uid[32];
+    char    extra[128];
+} ScanViewModel;
+
 // ── Tag protocols the app tracks ─────────────────────────────────────────────
 typedef enum {
     TagProtoUnknown = 0,
