@@ -70,18 +70,15 @@ static void subghz_rx_callback(bool level, uint32_t duration, void* ctx) {
 }
 
 // ── TX replay callback — feeds captured durations back to CC1101 ──────────────
-// FuriHalSubGhzAsyncTxCallback: void(*)(uint32_t* duration, bool* level, void*)
-// Signal done by setting *duration = 0.
-static void tx_replay_callback(uint32_t* duration, bool* level, void* ctx) {
+// FuriHalSubGhzAsyncTxCallback: LevelDuration(*)(void*)
+// Signal done by returning level_duration_reset() (duration == 0).
+static LevelDuration tx_replay_callback(void* ctx) {
     UNUSED(ctx);
-    if(tx_idx >= capture_len) {
-        *duration = 0;
-        *level    = false;
-        return;
-    }
+    if(tx_idx >= capture_len) return level_duration_reset();
     uint32_t sample = capture_buf[tx_idx++];
-    *level    = (sample >> 31) & 1;
-    *duration = sample & 0x7FFFFFFF;
+    bool lv   = (sample >> 31) & 1;
+    uint32_t dur = sample & 0x7FFFFFFF;
+    return level_duration_make(lv, dur);
 }
 
 // ── Decode helper ─────────────────────────────────────────────────────────────
