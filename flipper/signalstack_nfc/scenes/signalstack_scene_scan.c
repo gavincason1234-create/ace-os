@@ -4,6 +4,12 @@
 #include <nfc/protocols/iso14443_3a/iso14443_3a_poller.h>
 #include <nfc/protocols/iso15693_3/iso15693_3_poller.h>
 
+// Forward-declare data accessors — present in SDK binary but not always in public headers
+typedef struct Iso14443_3aPoller Iso14443_3aPoller;
+typedef struct Iso15693_3Poller  Iso15693_3Poller;
+const Iso14443_3aData* iso14443_3a_poller_get_data(Iso14443_3aPoller* instance);
+const Iso15693_3Data*  iso15693_3_poller_get_data(Iso15693_3Poller* instance);
+
 // ── Scan view model ───────────────────────────────────────────────────────────
 typedef struct {
     bool    found;
@@ -112,7 +118,7 @@ static NfcCommand poller_14443a_cb(NfcGenericEvent event, void* ctx) {
 
     Iso14443_3aPollerEvent* e = event.event_data;
     if(e->type == Iso14443_3aPollerEventTypeReady) {
-        const Iso14443_3aData* d = iso14443_3a_poller_get_data(event.instance);
+        const Iso14443_3aData* d = iso14443_3a_poller_get_data((Iso14443_3aPoller*)event.instance);
 
         SignalStackScanResult* r = &app->last_scan;
         memset(r, 0, sizeof(*r));
@@ -142,7 +148,7 @@ static NfcCommand poller_15693_cb(NfcGenericEvent event, void* ctx) {
 
     Iso15693_3PollerEvent* e = event.event_data;
     if(e->type == Iso15693_3PollerEventTypeReady) {
-        const Iso15693_3Data* d = iso15693_3_poller_get_data(event.instance);
+        const Iso15693_3Data* d = iso15693_3_poller_get_data((Iso15693_3Poller*)event.instance);
 
         SignalStackScanResult* r = &app->last_scan;
         memset(r, 0, sizeof(*r));
@@ -276,7 +282,8 @@ bool signalstack_scene_scan_on_event(void* ctx, SceneManagerEvent event) {
                 vm->found = true;
                 snprintf(vm->proto, sizeof(vm->proto), "%s", app->last_scan.proto_name);
                 snprintf(vm->uid,   sizeof(vm->uid),   "%s", app->last_scan.uid_str);
-                snprintf(vm->extra, sizeof(vm->extra), "%s", app->last_scan.extra);
+                snprintf(vm->extra, sizeof(vm->extra), "%.*s",
+                    (int)(sizeof(vm->extra) - 1), app->last_scan.extra);
             },
             true);
         consumed = true;

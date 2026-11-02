@@ -75,7 +75,7 @@ typedef struct {
     uint8_t      uid_len;
     char         uid_str[32];         // hex string
     char         extra[256];          // ATQA/SAK, DSFID, AFI, etc.
-    char         timestamp[20];       // YYYY-MM-DD HH:MM:SS
+    char         timestamp[24];       // YYYY-MM-DD HH:MM:SS
     uint32_t     unix_ts;
     bool         saved;
 } SignalStackScanResult;

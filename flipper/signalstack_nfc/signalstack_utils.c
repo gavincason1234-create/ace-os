@@ -20,9 +20,13 @@ void signalstack_uid_to_str(const uint8_t* uid, uint8_t len, char* out) {
 void signalstack_get_timestamp(char* out, uint32_t* unix_out) {
     DateTime dt;
     furi_hal_rtc_get_datetime(&dt);
-    snprintf(out, 20, "%04u-%02u-%02u %02u:%02u:%02u",
-        dt.year, dt.month, dt.day,
-        dt.hour, dt.minute, dt.second);
+    snprintf(out, 24, "%04u-%02u-%02u %02u:%02u:%02u",
+        (unsigned)(dt.year % 10000),
+        (unsigned)(dt.month % 100),
+        (unsigned)(dt.day % 100),
+        (unsigned)(dt.hour % 100),
+        (unsigned)(dt.minute % 100),
+        (unsigned)(dt.second % 100));
     *unix_out = (uint32_t)dt.hour * 3600 +
                 (uint32_t)dt.minute * 60 +
                 (uint32_t)dt.second;

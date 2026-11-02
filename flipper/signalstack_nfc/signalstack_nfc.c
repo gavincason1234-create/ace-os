@@ -4,9 +4,6 @@
 #include "signalstack_nfc.h"
 #include "scenes/signalstack_scene.h"
 
-// ── Scene manager handlers (defined in scenes/) ───────────────────────────────
-extern const SceneManagerHandlers signalstack_scene_handlers;
-
 // ── View dispatcher callback ──────────────────────────────────────────────────
 static bool signalstack_back_event_callback(void* ctx) {
     SignalStackApp* app = ctx;
@@ -41,7 +38,6 @@ SignalStackApp* signalstack_app_alloc(void) {
     // Scene / view dispatcher
     app->scene_manager   = scene_manager_alloc(&signalstack_scene_handlers, app);
     app->view_dispatcher = view_dispatcher_alloc();
-    view_dispatcher_enable_queue(app->view_dispatcher);
     view_dispatcher_set_event_callback_context(app->view_dispatcher, app);
     view_dispatcher_set_custom_event_callback(app->view_dispatcher, signalstack_custom_event_callback);
     view_dispatcher_set_navigation_event_callback(app->view_dispatcher, signalstack_back_event_callback);
