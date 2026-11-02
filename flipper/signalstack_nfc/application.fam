@@ -1,0 +1,14 @@
+App(
+    appid="signalstack_nfc",
+    name="SignalStack NFC",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="signalstack_nfc_app",
+    requires=["gui", "storage", "notification"],
+    stack_size=4 * 1024,
+    fap_icon="images/signalstack_10x10.png",
+    fap_category="NFC",
+    fap_description="SignalStack 13.56MHz NFC/RFID full-spectrum scanner",
+    fap_author="SignalStack",
+    fap_version="1.0.0",
+    fap_icon_assets="images",
+)
