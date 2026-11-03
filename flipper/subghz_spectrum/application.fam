@@ -1,0 +1,12 @@
+App(
+    appid="subghz_spectrum",
+    name="Sub-GHz Spectrum",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="subghz_spectrum_app",
+    requires=["subghz"],
+    stack_size=4 * 1024,
+    fap_category="Sub-GHz",
+    fap_description="Live spectrum analyzer — sweep 315/433/868/915 MHz IoT bands",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)
