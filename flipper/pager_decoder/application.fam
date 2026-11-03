@@ -1,0 +1,12 @@
+App(
+    appid="pager_decoder",
+    name="Pager Decoder",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="pager_decoder_app",
+    requires=["subghz"],
+    stack_size=4 * 1024,
+    fap_category="Sub-GHz",
+    fap_description="POCSAG pager decoder on 152/157 MHz — demo only",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)
