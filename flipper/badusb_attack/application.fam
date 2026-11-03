@@ -1,0 +1,9 @@
+App(
+    appid="badusb_attack",
+    name="BadUSB Attack",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="badusb_attack_app",
+    stack_size=4*1024,
+    fap_category="GPIO",
+    fap_description="USB HID keystroke injection demo — authorized use only",
+)
