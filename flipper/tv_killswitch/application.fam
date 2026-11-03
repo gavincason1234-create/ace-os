@@ -1,0 +1,9 @@
+App(
+    appid="tv_killswitch",
+    name="TV Kill Switch",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="tv_killswitch_app",
+    stack_size=4*1024,
+    fap_category="Infrared",
+    fap_description="Universal TV power-off demo — 60+ brands",
+)
