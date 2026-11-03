@@ -1,0 +1,12 @@
+App(
+    appid="ble_scanner",
+    name="BLE Scanner",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="ble_scanner_app",
+    requires=["bt"],
+    stack_size=4 * 1024,
+    fap_category="Bluetooth",
+    fap_description="Passive BLE device enumeration — MAC, manufacturer, RSSI, privacy",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)

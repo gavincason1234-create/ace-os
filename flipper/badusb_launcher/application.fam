@@ -1,0 +1,12 @@
+App(
+    appid="badusb_launcher",
+    name="BadUSB Launcher",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="badusb_launcher_app",
+    requires=[],
+    stack_size=4 * 1024,
+    fap_category="USB",
+    fap_description="HID injection payloads for USB attack-vector demonstrations",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)

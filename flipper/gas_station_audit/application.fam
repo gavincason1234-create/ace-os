@@ -1,0 +1,14 @@
+App(
+    appid="gas_station_audit",
+    name="Gas Station Audit",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="gas_station_audit_app",
+    requires=["gui", "storage", "notification"],
+    stack_size=4 * 1024,
+    fap_icon="images/gas_10x10.png",
+    fap_category="GPIO",
+    fap_version=(1, 0),
+    fap_description="Gas pump security audit: BT skimmer detection, RFID fleet card scan, Sub-GHz monitor",
+    fap_author="SignalStack",
+    fap_weburl="https://signalstack.io",
+)

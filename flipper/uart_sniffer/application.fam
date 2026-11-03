@@ -1,0 +1,12 @@
+App(
+    appid="uart_sniffer",
+    name="UART Debug Sniffer",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="uart_sniffer_app",
+    requires=[],
+    stack_size=4 * 1024,
+    fap_category="GPIO",
+    fap_description="Sniff UART debug ports on IoT devices — routers, cameras, PLCs",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)

@@ -1,0 +1,13 @@
+App(
+    appid="badge_cloner",
+    name="Badge Cloner",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="badge_cloner_app",
+    requires=["lfrfid"],
+    stack_size=4 * 1024,
+    fap_category="RFID",
+    fap_description="125kHz HID/EM4100 badge reader, storage, and emulator",
+    fap_author="SignalStack",
+    fap_version="1.0",
+    fap_icon="bc_icon.png",
+)

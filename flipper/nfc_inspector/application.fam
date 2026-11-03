@@ -1,0 +1,12 @@
+App(
+    appid="nfc_inspector",
+    name="NFC Inspector",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="nfc_inspector_app",
+    requires=["nfc"],
+    stack_size=4 * 1024,
+    fap_category="NFC",
+    fap_description="13.56MHz NFC/MIFARE card reader and sector dumper",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)

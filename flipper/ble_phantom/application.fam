@@ -1,0 +1,10 @@
+App(
+    appid="ble_phantom",
+    name="BLE Phantom",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="ble_phantom_app",
+    requires=["bt"],
+    stack_size=4*1024,
+    fap_category="GPIO",
+    fap_description="BLE phantom flooder — authorized demos only",
+)

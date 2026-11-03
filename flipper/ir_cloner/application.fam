@@ -1,0 +1,12 @@
+App(
+    appid="ir_cloner",
+    name="IR Remote Cloner",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="ir_cloner_app",
+    requires=[],
+    stack_size=4 * 1024,
+    fap_category="Infrared",
+    fap_description="Capture and replay any IR remote signal — AC, projector, gate, automation",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)

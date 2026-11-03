@@ -1,0 +1,12 @@
+App(
+    appid="subghz_capture",
+    name="SubGHz Capture",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="subghz_capture_app",
+    requires=["subghz"],
+    stack_size=4 * 1024,
+    fap_category="Sub-GHz",
+    fap_description="Capture and replay raw OOK Sub-GHz signals — garage doors, key fobs",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)
