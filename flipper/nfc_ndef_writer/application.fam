@@ -1,0 +1,12 @@
+App(
+    appid="nfc_ndef_writer",
+    name="NFC NDEF Writer",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="nfc_ndef_writer_app",
+    requires=["nfc"],
+    stack_size=4 * 1024,
+    fap_category="NFC",
+    fap_description="Write NDEF payloads to NFC tags — URL redirect, WiFi cred, vCard",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)
