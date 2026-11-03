@@ -1,0 +1,12 @@
+App(
+    appid="ibutton_cloner",
+    name="iButton Key Cloner",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="ibutton_cloner_app",
+    requires=[],
+    stack_size=4 * 1024,
+    fap_category="iButton",
+    fap_description="Clone Dallas 1-Wire iButton keys used in apartments, elevators, gyms",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)
