@@ -1,0 +1,12 @@
+App(
+    appid="subghz_replay",
+    name="SubGHz Replay",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="subghz_replay_app",
+    requires=["subghz"],
+    stack_size=4 * 1024,
+    fap_category="Sub-GHz",
+    fap_description="OOK/ASK signal capture and replay — fixed-code vulnerability demo",
+    fap_author="SignalStack",
+    fap_version="1.0",
+)
